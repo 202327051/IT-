@@ -14,7 +14,7 @@ import matplotlib
 # グラフの日本語化け対策
 matplotlib.use('Agg') 
 
-# template_folderのパスから /ITパスポート/ を削除
+# Render環境に合わせたテンプレート指定
 app = Flask(__name__, template_folder='templates')
 CORS(app)
 
@@ -23,7 +23,7 @@ app.config['BASIC_AUTH_PASSWORD'] = '0000'
 app.config['BASIC_AUTH_FORCE'] = True
 basic_auth = BasicAuth(app)
 
-# DBのパスから /ITパスポート/ を削除
+# パスをRenderの標準（カレントディレクトリ）に変更
 DB_PATH = "history.db"
 
 def normalize_text(text):
@@ -44,7 +44,7 @@ def index():
 @app.route('/get_question', methods=['POST'])
 def get_question():
     mode = str(request.json.get("mode"))
-    # file_pathから /ITパスポート/ を削除
+    # パス修正
     file_path = 'ITパスポート.csv' if mode == '1' else '用語説明.csv'
     
     try:
@@ -69,7 +69,7 @@ def get_question():
 def check_answer():
     data = request.json
     mode, q_id, user_ans = str(data.get("mode")), data.get("id"), data.get("answer")
-    # file_pathから /ITパスポート/ を削除
+    # パス修正
     file_path = 'ITパスポート.csv' if mode == '1' else '用語説明.csv'
     
     df = pd.read_csv(file_path, encoding="utf-8")
@@ -89,6 +89,7 @@ def check_answer():
         max_score = int(q["満点"])
         res.update({"score": score, "max": max_score, "correct": str(q["模範解答"]), "keywords": keywords, "miss": miss})
 
+    # DB保存
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("INSERT INTO history (問題ID, ジャンル, 回答, 得点, 満点, mode) VALUES (?, ?, ?, ?, ?, ?)",
@@ -145,7 +146,6 @@ if __name__ == '__main__':
     conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, accuracy REAL)")
     conn.close()
 
-    # Renderのポート番号自動取得に対応
+    # Renderのポート番号に合わせる
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-
