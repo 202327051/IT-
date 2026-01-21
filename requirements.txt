@@ -1,6 +1,7 @@
 Flask
 Flask-CORS
-Flask-BasicAuth
+Flask-Basicauth
 pandas
 matplotlib
+
 gunicorn
