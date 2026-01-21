@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-from flask_basicauth import BasicAuth
 import pandas as pd
 import sqlite3
 import unicodedata
@@ -11,19 +10,19 @@ import os
 import matplotlib.pyplot as plt
 import matplotlib
 
-# サーバーでのグラフ生成設定
+# グラフの日本語化け対策
 matplotlib.use('Agg') 
 
-app = Flask(__name__)
+# template_folderのパスから /ITパスポート/ を削除
+app = Flask(__name__, template_folder='templates')
 CORS(app)
 
-# --- 認証設定 ---
 app.config['BASIC_AUTH_USERNAME'] = '202327000'
 app.config['BASIC_AUTH_PASSWORD'] = '0000'
 app.config['BASIC_AUTH_FORCE'] = True
 basic_auth = BasicAuth(app)
 
-# --- パス設定（/ITパスポート/ を削除した相対パス） ---
+# DBのパスから /ITパスポート/ を削除
 DB_PATH = "history.db"
 
 def normalize_text(text):
@@ -44,7 +43,9 @@ def index():
 @app.route('/get_question', methods=['POST'])
 def get_question():
     mode = str(request.json.get("mode"))
-    file_path = "ITパスポート.csv" if mode == '1' else "用語説明.csv"
+    # file_pathから /ITパスポート/ を削除
+    file_path = 'ITパスポート.csv' if mode == '1' else '用語説明.csv'
+    
     try:
         df = pd.read_csv(file_path, encoding="utf-8")
         q = df.sample(1).iloc[0]
@@ -56,16 +57,19 @@ def get_question():
         question_text = f"「{question_text}」について説明してください。"
     
     res = {"id": int(q["id"]), "genre": q["ジャンル"], "question": str(question_text)}
+    
     if mode == "1":
         choices_raw = str(q["選択肢"])
         res["choices"] = [c.strip() for c in choices_raw.split('\n') if c.strip()]
+        
     return jsonify(res)
 
 @app.route('/check_answer', methods=['POST'])
 def check_answer():
     data = request.json
     mode, q_id, user_ans = str(data.get("mode")), data.get("id"), data.get("answer")
-    file_path = "ITパスポート.csv" if mode == '1' else "用語説明.csv"
+    # file_pathから /ITパスポート/ を削除
+    file_path = 'ITパスポート.csv' if mode == '1' else '用語説明.csv'
     
     df = pd.read_csv(file_path, encoding="utf-8")
     q = df[df['id'] == q_id].iloc[0]
@@ -100,9 +104,11 @@ def get_final_stats():
     row = cur.fetchone()
     total_score, total_max = (row[0] or 0), (row[1] or 0)
     total_rate = (total_score / total_max * 100) if total_max > 0 else 0
+    
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime("%m/%d %H:%M")
     cur.execute("INSERT INTO session_stats (timestamp, accuracy) VALUES (?, ?)", (now, total_rate))
     conn.commit()
+    
     df_genre = pd.read_sql_query("SELECT ジャンル, SUM(得点) as s, SUM(満点) as m, ROUND(SUM(得点)*100.0/SUM(満点), 1) as rate FROM history WHERE mode = '1' GROUP BY ジャンル ORDER BY rate ASC", conn)
     conn.close()
     return jsonify({"total_rate": round(total_rate, 1), "total_score": total_score, "total_max": total_max, "genre_stats": df_genre.to_dict(orient='records')})
@@ -113,9 +119,11 @@ def get_graph():
     df_stats = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats", conn)
     conn.close()
     if df_stats.empty: return jsonify({"error": "No data"})
+    
     plt.figure(figsize=(6, 4))
     plt.plot(df_stats['timestamp'], df_stats['accuracy'], marker='o', color='#007bff')
     plt.title("Progress"); plt.ylim(-5, 105); plt.grid(True, alpha=0.3); plt.xticks(rotation=30); plt.tight_layout()
+    
     img = io.BytesIO()
     plt.savefig(img, format='png'); img.seek(0)
     plot_url = base64.b64encode(img.getvalue()).decode()
@@ -135,7 +143,7 @@ if __name__ == '__main__':
     conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, accuracy REAL)")
     conn.close()
-    
-    # Renderの環境変数PORTに対応
+
+    # Renderのポート番号自動取得に対応
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
