@@ -1,21 +1,31 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
+from flask_basicauth import BasicAuth
 import pandas as pd
 import sqlite3
 import unicodedata
 import datetime
 import io
 import base64
+import os
 import matplotlib.pyplot as plt
 import matplotlib
 
-# グラフの日本語化け対策
+# グラフの日本語化け対策（サーバー用設定）
 matplotlib.use('Agg') 
 
-app = Flask(__name__, template_folder='/ITパスポート/templates')
+app = Flask(__name__)
 CORS(app)
 
-DB_PATH = "/ITパスポート/history.db"
+# --- パスワード保護（研究用） ---
+app.config['BASIC_AUTH_USERNAME'] = 'research'      # ユーザー名
+app.config['BASIC_AUTH_PASSWORD'] = 'itpass2024'    # パスワード
+app.config['BASIC_AUTH_FORCE'] = True
+basic_auth = BasicAuth(app)
+
+# --- データベース・CSVのパス設定（相対パスに変更） ---
+# Renderでは実行ファイルと同じ階層に置かれるため、パス指定なしでOK
+DB_PATH = "history.db"
 
 def normalize_text(text):
     text = unicodedata.normalize("NFKC", str(text)).lower()
@@ -30,12 +40,14 @@ def normalize_choice(text):
 
 @app.route('/')
 def index():
+    # デフォルトで templates フォルダ内の index.html を探します
     return render_template('index.html')
 
 @app.route('/get_question', methods=['POST'])
 def get_question():
     mode = str(request.json.get("mode"))
-    file_path = f"/ITパスポート/{ 'ITパスポート.csv' if mode == '1' else '用語説明.csv' }"
+    # パスから /ITパスポート/ を削除
+    file_path = "ITパスポート.csv" if mode == '1' else "用語説明.csv"
     
     try:
         df = pd.read_csv(file_path, encoding="utf-8")
@@ -50,7 +62,6 @@ def get_question():
     res = {"id": int(q["id"]), "genre": q["ジャンル"], "question": str(question_text)}
     
     if mode == "1":
-        # 選択肢を改行で分割してリストとして送る
         choices_raw = str(q["選択肢"])
         res["choices"] = [c.strip() for c in choices_raw.split('\n') if c.strip()]
         
@@ -60,7 +71,7 @@ def get_question():
 def check_answer():
     data = request.json
     mode, q_id, user_ans = str(data.get("mode")), data.get("id"), data.get("answer")
-    file_path = f"/ITパスポート/{ 'ITパスポート.csv' if mode == '1' else '用語説明.csv' }"
+    file_path = "ITパスポート.csv" if mode == '1' else "用語説明.csv"
     
     df = pd.read_csv(file_path, encoding="utf-8")
     q = df[df['id'] == q_id].iloc[0]
@@ -131,14 +142,12 @@ def reset_history():
     return jsonify({"message": "Reset successful"})
 
 if __name__ == '__main__':
+    # DB初期化
     conn = sqlite3.connect(DB_PATH)
     conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, accuracy REAL)")
     conn.close()
 
-    try:
-        from google.colab.output import eval_js
-        print("App URL:", eval_js("google.colab.kernel.proxyPort(5000)"))
-    except:
-        pass
-    app.run(host='0.0.0.0', port=5000)
+    # Render環境のポート番号に合わせる設定
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
