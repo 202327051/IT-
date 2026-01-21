@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-from flask_basicauth import BasicAuth
 import pandas as pd
 import sqlite3
 import unicodedata
@@ -16,14 +15,6 @@ matplotlib.use('Agg')
 
 app = Flask(__name__, template_folder='templates')
 CORS(app)
-
-# -----------------------------
-# Basic認証
-# -----------------------------
-app.config['BASIC_AUTH_USERNAME'] = '202327000'
-app.config['BASIC_AUTH_PASSWORD'] = '0000'
-app.config['BASIC_AUTH_FORCE'] = True
-basic_auth = Basicauth(app)
 
 DB_PATH = "history.db"
 
@@ -237,4 +228,5 @@ def reset_history():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
 
