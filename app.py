@@ -11,20 +11,19 @@ import os
 import matplotlib.pyplot as plt
 import matplotlib
 
-# グラフの日本語化け対策（サーバー用設定）
+# サーバーでのグラフ生成設定
 matplotlib.use('Agg') 
 
 app = Flask(__name__)
 CORS(app)
 
-# --- パスワード保護（研究用） ---
-app.config['BASIC_AUTH_USERNAME'] = 'research'      # ユーザー名
-app.config['BASIC_AUTH_PASSWORD'] = 'itpass2024'    # パスワード
+# --- 認証設定 ---
+app.config['BASIC_AUTH_USERNAME'] = '202327000'
+app.config['BASIC_AUTH_PASSWORD'] = '0000'
 app.config['BASIC_AUTH_FORCE'] = True
 basic_auth = BasicAuth(app)
 
-# --- データベース・CSVのパス設定（相対パスに変更） ---
-# Renderでは実行ファイルと同じ階層に置かれるため、パス指定なしでOK
+# --- パス設定（/ITパスポート/ を削除した相対パス） ---
 DB_PATH = "history.db"
 
 def normalize_text(text):
@@ -40,15 +39,12 @@ def normalize_choice(text):
 
 @app.route('/')
 def index():
-    # デフォルトで templates フォルダ内の index.html を探します
     return render_template('index.html')
 
 @app.route('/get_question', methods=['POST'])
 def get_question():
     mode = str(request.json.get("mode"))
-    # パスから /ITパスポート/ を削除
     file_path = "ITパスポート.csv" if mode == '1' else "用語説明.csv"
-    
     try:
         df = pd.read_csv(file_path, encoding="utf-8")
         q = df.sample(1).iloc[0]
@@ -60,11 +56,9 @@ def get_question():
         question_text = f"「{question_text}」について説明してください。"
     
     res = {"id": int(q["id"]), "genre": q["ジャンル"], "question": str(question_text)}
-    
     if mode == "1":
         choices_raw = str(q["選択肢"])
         res["choices"] = [c.strip() for c in choices_raw.split('\n') if c.strip()]
-        
     return jsonify(res)
 
 @app.route('/check_answer', methods=['POST'])
@@ -90,7 +84,6 @@ def check_answer():
         max_score = int(q["満点"])
         res.update({"score": score, "max": max_score, "correct": str(q["模範解答"]), "keywords": keywords, "miss": miss})
 
-    # DB保存
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("INSERT INTO history (問題ID, ジャンル, 回答, 得点, 満点, mode) VALUES (?, ?, ?, ?, ?, ?)",
@@ -107,11 +100,9 @@ def get_final_stats():
     row = cur.fetchone()
     total_score, total_max = (row[0] or 0), (row[1] or 0)
     total_rate = (total_score / total_max * 100) if total_max > 0 else 0
-    
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime("%m/%d %H:%M")
     cur.execute("INSERT INTO session_stats (timestamp, accuracy) VALUES (?, ?)", (now, total_rate))
     conn.commit()
-    
     df_genre = pd.read_sql_query("SELECT ジャンル, SUM(得点) as s, SUM(満点) as m, ROUND(SUM(得点)*100.0/SUM(満点), 1) as rate FROM history WHERE mode = '1' GROUP BY ジャンル ORDER BY rate ASC", conn)
     conn.close()
     return jsonify({"total_rate": round(total_rate, 1), "total_score": total_score, "total_max": total_max, "genre_stats": df_genre.to_dict(orient='records')})
@@ -122,11 +113,9 @@ def get_graph():
     df_stats = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats", conn)
     conn.close()
     if df_stats.empty: return jsonify({"error": "No data"})
-    
     plt.figure(figsize=(6, 4))
     plt.plot(df_stats['timestamp'], df_stats['accuracy'], marker='o', color='#007bff')
     plt.title("Progress"); plt.ylim(-5, 105); plt.grid(True, alpha=0.3); plt.xticks(rotation=30); plt.tight_layout()
-    
     img = io.BytesIO()
     plt.savefig(img, format='png'); img.seek(0)
     plot_url = base64.b64encode(img.getvalue()).decode()
@@ -142,12 +131,11 @@ def reset_history():
     return jsonify({"message": "Reset successful"})
 
 if __name__ == '__main__':
-    # DB初期化
     conn = sqlite3.connect(DB_PATH)
     conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, accuracy REAL)")
     conn.close()
-
-    # Render環境のポート番号に合わせる設定
+    
+    # Renderの環境変数PORTに対応
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
