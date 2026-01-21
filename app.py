@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
+from flask_basicauth import BasicAuth
 import pandas as pd
 import sqlite3
 import unicodedata
@@ -147,3 +148,4 @@ if __name__ == '__main__':
     # Renderのポート番号自動取得に対応
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
