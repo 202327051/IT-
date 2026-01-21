@@ -18,12 +18,13 @@ matplotlib.use('Agg')
 app = Flask(__name__, template_folder='templates')
 CORS(app)
 
+# パスワード認証設定
 app.config['BASIC_AUTH_USERNAME'] = '202327000'
 app.config['BASIC_AUTH_PASSWORD'] = '0000'
 app.config['BASIC_AUTH_FORCE'] = True
 basic_auth = BasicAuth(app)
 
-# パスをRenderの標準（カレントディレクトリ）に変更
+# パスをRenderの標準に変更
 DB_PATH = "history.db"
 
 def normalize_text(text):
@@ -44,7 +45,6 @@ def index():
 @app.route('/get_question', methods=['POST'])
 def get_question():
     mode = str(request.json.get("mode"))
-    # パス修正
     file_path = 'ITパスポート.csv' if mode == '1' else '用語説明.csv'
     
     try:
@@ -69,7 +69,6 @@ def get_question():
 def check_answer():
     data = request.json
     mode, q_id, user_ans = str(data.get("mode")), data.get("id"), data.get("answer")
-    # パス修正
     file_path = 'ITパスポート.csv' if mode == '1' else '用語説明.csv'
     
     df = pd.read_csv(file_path, encoding="utf-8")
@@ -89,7 +88,7 @@ def check_answer():
         max_score = int(q["満点"])
         res.update({"score": score, "max": max_score, "correct": str(q["模範解答"]), "keywords": keywords, "miss": miss})
 
-    # DB保存
+    # DB保存（テーブル名は history で統一）
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("INSERT INTO history (問題ID, ジャンル, 回答, 得点, 満点, mode) VALUES (?, ?, ?, ?, ?, ?)",
@@ -102,6 +101,7 @@ def check_answer():
 def get_final_stats():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+    # テーブル名は history
     cur.execute("SELECT SUM(得点), SUM(満点) FROM history WHERE mode = '1'")
     row = cur.fetchone()
     total_score, total_max = (row[0] or 0), (row[1] or 0)
@@ -141,6 +141,7 @@ def reset_history():
     return jsonify({"message": "Reset successful"})
 
 if __name__ == '__main__':
+    # 起動時に必ず小文字の history テーブルを作成
     conn = sqlite3.connect(DB_PATH)
     conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, accuracy REAL)")
