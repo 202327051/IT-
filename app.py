@@ -23,7 +23,7 @@ CORS(app)
 app.config['BASIC_AUTH_USERNAME'] = '202327000'
 app.config['BASIC_AUTH_PASSWORD'] = '0000'
 app.config['BASIC_AUTH_FORCE'] = True
-basic_auth = BasicAuth(app)
+basic_auth = Basicauth(app)
 
 DB_PATH = "history.db"
 
@@ -237,3 +237,4 @@ def reset_history():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
