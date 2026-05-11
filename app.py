@@ -47,6 +47,7 @@ def normalize_choice(text):
     mapping = {"a": "ア", "ａ": "ア", "i": "イ", "ｉ": "イ", "u": "ウ", "ｕ": "ウ", "e": "エ", "ｅ": "エ"}
     return mapping.get(text, text)
 
+# DB初期化
 conn = sqlite3.connect(DB_PATH)
 conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)")
 conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
@@ -98,12 +99,9 @@ def index():
 def get_question():
     mode = str(request.json.get("mode"))
     file_path = 'ITパスポート.csv' if mode == '1' else '用語説明.csv'
-    try:
-        df = pd.read_csv(file_path, encoding="utf-8")
-        q = df.sample(1).iloc[0]
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+    df = pd.read_csv(file_path, encoding="utf-8")
+    q = df.sample(1).iloc[0]
+    
     question_text = q["問題文"]
     if mode == "2":
         question_text = f"「{question_text}」について説明してください。"
@@ -119,7 +117,7 @@ def get_question():
 def check_answer():
     data = request.json
     mode, q_id, user_ans, session_id = str(data.get("mode")), data.get("id"), data.get("answer"), data.get("session_id")
-
+    
     file_path = 'ITパスポート.csv' if mode == '1' else '用語説明.csv'
     df = pd.read_csv(file_path, encoding="utf-8")
     q = df[df['id'] == q_id].iloc[0]
@@ -149,7 +147,7 @@ def check_answer():
 def get_final_stats():
     session_id = request.json.get("session_id")
     conn = sqlite3.connect(DB_PATH)
-    # 今回のセッションかつモード1(過去問)のみを集計
+    # 現在のユーザー、現在のセッション、過去問モード(1)のみを集計
     row = conn.execute("SELECT SUM(得点), SUM(満点) FROM history WHERE user_id = ? AND session_id = ? AND mode = '1'", (current_user.id, session_id)).fetchone()
     total_score, total_max = row[0] or 0, row[1] or 0
     total_rate = (total_score / total_max * 100) if total_max > 0 else 0
@@ -165,7 +163,7 @@ def get_final_stats():
 @app.route('/get_graph')
 @login_required
 def get_graph():
-    df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=?", sqlite3.connect(DB_PATH), params=(current_user.id,))
+    df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=? ORDER BY id ASC", sqlite3.connect(DB_PATH), params=(current_user.id,))
     if df.empty: return jsonify({"error": "No data"})
     plt.figure(figsize=(6, 4))
     plt.plot(df['timestamp'], df['accuracy'], marker='o')
