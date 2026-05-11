@@ -19,12 +19,20 @@
         .bot { align-self: flex-start; background: var(--bot-bubble); color: black; border-top-left-radius: 2px; }
         .user { align-self: flex-end; background: var(--user-bubble); color: black; border-top-right-radius: 2px; }
         
+        /* 認証エリアのスタイル */
+        #auth-container { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(116, 148, 192, 0.95); z-index: 100; 
+            display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 20px;
+        }
+        .auth-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); width: 80%; max-width: 300px; display: flex; flex-direction: column; gap: 15px; }
+        .auth-box input { padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; }
+
         .input-area-fixed { background: #f8f8f8; padding: 10px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
         .input-bar { display: flex; gap: 8px; }
         
         input[type="text"] { flex: 1; border: 1px solid #ccc; padding: 10px 15px; border-radius: 25px; font-size: 16px; outline: none; background: white; }
-        
         button { border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
         button:active { opacity: 0.7; }
         
@@ -39,44 +47,60 @@
         th, td { border: 1px solid #ddd; padding: 5px; text-align: left; }
     </style>
 </head>
-<body onload="initChat()">
-    <div class="header">ITパスポート学習チャット</div>
-    <div id="chat-box"></div>
-
-    <div class="input-area-fixed">
-        <div id="mode-select" class="controls">
-            <button onclick="startApp('1')" class="btn-blue">過去問モード</button>
-            <button onclick="startApp('2')" class="btn-blue">用語説明モード</button>
+<body>
+    <div id="auth-container">
+        <h2 style="color: white;">学習ボット ログイン</h2>
+        <div class="auth-box">
+            <input type="text" id="username" placeholder="ユーザー名">
+            <input type="password" id="password" placeholder="パスワード">
+            <button onclick="auth('login')" class="btn-blue">ログイン</button>
+            <button onclick="auth('register')" class="btn-gray">新規ユーザー登録</button>
         </div>
+    </div>
 
-        <div id="choice-area" class="controls hidden">
-            <button class="choice-btn" onclick="handleAnswer('ア')">ア</button>
-            <button class="choice-btn" onclick="handleAnswer('イ')">イ</button>
-            <button class="choice-btn" onclick="handleAnswer('ウ')">ウ</button>
-            <button class="choice-btn" onclick="handleAnswer('エ')">エ</button>
+    <div id="main-app" class="hidden" style="height: 100%; display: flex; flex-direction: column;">
+        <div class="header">
+            ITパスポート学習チャット 
+            <button onclick="handleLogout()" style="float: right; padding: 2px 10px; font-size: 10px;" class="btn-red">ログアウト</button>
         </div>
+        
+        <div id="chat-box"></div>
 
-        <div id="next-area" class="controls hidden">
-            <button onclick="loadQuestion()" class="btn-blue">次の問題へ</button>
-            <button id="finish-btn" onclick="finishApp()" class="btn-red">終了・集計</button>
-            <button id="exit-btn" onclick="backToTop()" class="btn-gray hidden">トップへ戻る</button>
-        </div>
+        <div class="input-area-fixed">
+            <div id="mode-select" class="controls">
+                <button onclick="startApp('1')" class="btn-blue">過去問モード</button>
+                <button onclick="startApp('2')" class="btn-blue">用語説明モード</button>
+            </div>
 
-        <div id="menu-area" class="controls hidden">
-            <button onclick="startApp('1')" class="btn-blue">過去問モード</button>
-            <button onclick="startApp('2')" class="btn-blue">用語説明モード</button>
-            <button onclick="showGraph()" class="btn-blue">成績グラフ</button>
-            <button onclick="backToTop()" class="btn-gray">トップに戻る</button>
-        </div>
+            <div id="choice-area" class="controls hidden">
+                <button class="choice-btn" onclick="handleAnswer('ア')">ア</button>
+                <button class="choice-btn" onclick="handleAnswer('イ')">イ</button>
+                <button class="choice-btn" onclick="handleAnswer('ウ')">ウ</button>
+                <button class="choice-btn" onclick="handleAnswer('エ')">エ</button>
+            </div>
 
-        <div id="graph-menu" class="controls hidden">
-            <button onclick="confirmReset()" class="btn-red">履歴リセット</button>
-            <button onclick="backToTop()" class="btn-gray">戻る</button>
-        </div>
+            <div id="next-area" class="controls hidden">
+                <button onclick="loadQuestion()" class="btn-blue">次の問題へ</button>
+                <button id="finish-btn" onclick="finishApp()" class="btn-red">終了・集計</button>
+                <button id="exit-btn" onclick="backToTop()" class="btn-gray hidden">トップへ戻る</button>
+            </div>
 
-        <div class="input-bar">
-            <input type="text" id="user-input" placeholder="答えを入力..." onkeypress="if(event.keyCode==13) sendMessage()">
-            <button onclick="sendMessage()" class="btn-send">送信</button>
+            <div id="menu-area" class="controls hidden">
+                <button onclick="startApp('1')" class="btn-blue">過去問モード</button>
+                <button onclick="startApp('2')" class="btn-blue">用語説明モード</button>
+                <button onclick="showGraph()" class="btn-blue">成績グラフ</button>
+                <button onclick="backToTop()" class="btn-gray">トップに戻る</button>
+            </div>
+
+            <div id="graph-menu" class="controls hidden">
+                <button onclick="confirmReset()" class="btn-red">履歴リセット</button>
+                <button onclick="backToTop()" class="btn-gray">戻る</button>
+            </div>
+
+            <div class="input-bar">
+                <input type="text" id="user-input" placeholder="答えを入力..." onkeypress="if(event.keyCode==13) sendMessage()">
+                <button onclick="sendMessage()" class="btn-send">送信</button>
+            </div>
         </div>
     </div>
 
@@ -86,6 +110,35 @@
         let qCount = 0;
         let isWaitingForAnswer = false;
 
+        // --- 認証用関数 ---
+        async function auth(type) {
+            const user = document.getElementById("username").value;
+            const pass = document.getElementById("password").value;
+            if(!user || !pass) return alert("ユーザー名とパスワードを入力してください");
+
+            const res = await fetch('/' + type, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: user, password: pass })
+            });
+            const data = await res.json();
+            
+            if (res.ok) {
+                alert(data.message);
+                document.getElementById("auth-container").classList.add("hidden");
+                document.getElementById("main-app").classList.remove("hidden");
+                initChat();
+            } else {
+                alert(data.error);
+            }
+        }
+
+        async function handleLogout() {
+            await fetch('/logout');
+            location.reload();
+        }
+
+        // --- 以下、既存のチャットロジックを微修正 ---
         function addMsg(sender, text) {
             const box = document.getElementById("chat-box");
             const div = document.createElement("div");
@@ -97,7 +150,8 @@
 
         function initChat() { 
             isWaitingForAnswer = false;
-            addMsg("bot", "ITパスポート学習ボットです。まずは下のボタンからモードを選んでください。"); 
+            document.getElementById("chat-box").innerHTML = ""; // クリア
+            addMsg("bot", "ログインしました。ITパスポート学習ボットです。まずは下のボタンからモードを選んでください。"); 
         }
 
         function sendMessage() {
@@ -191,7 +245,7 @@
         function backToTop() { 
             hideAllControls(); 
             document.getElementById("mode-select").classList.remove("hidden"); 
-            initChat(); 
+            addMsg("bot", "モードを選択してください。"); 
         }
 
         function hideAllControls() { 
@@ -202,9 +256,10 @@
         }
 
         async function confirmReset() { 
-            if(confirm("全ての履歴をリセットしてもよろしいですか？")) { 
+            if(confirm("個人の履歴をリセットしてもよろしいですか？")) { 
                 await fetch('/reset_history', {method: 'POST'}); 
-                location.reload(); 
+                initChat();
+                backToTop();
             } 
         }
     </script>
