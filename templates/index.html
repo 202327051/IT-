@@ -16,7 +16,7 @@
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
         .input-bar { display: flex; gap: 8px; }
         input[type="text"], input[type="password"] { flex: 1; border: 1px solid #ccc; padding: 10px 15px; border-radius: 25px; font-size: 16px; outline: none; }
-        button { border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
+        button { border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; cursor: pointer; }
         .btn-blue { background: #007bff; color: white; }
         .btn-send { background: #28a745; color: white; }
         .btn-red { background: #dc3545; color: white; }
@@ -199,7 +199,11 @@
 
         async function confirmReset() {
             if(confirm("全ての履歴をリセットしてもよろしいですか？")) {
-                await fetch('/reset_history', {method: 'POST'}); location.reload();
+                await fetch('/reset_history', {method: 'POST'});
+                // 修正：リロードせず、チャットをクリアしてトップに戻る
+                document.getElementById("chat-box").innerHTML = "";
+                backToTop();
+                addMsg("bot", "履歴をリセットしました。");
             }
         }
     </script>
