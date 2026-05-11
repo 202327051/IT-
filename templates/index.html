@@ -7,16 +7,16 @@
     <style>
         :root { --bg-color: #7494c0; --bot-bubble: #ffffff; --user-bubble: #85e249; }
         body, html { height: 100%; margin: 0; font-family: sans-serif; background: var(--bg-color); display: flex; flex-direction: column; }
-        .header { background: #35495e; color: white; padding: 12px; text-align: center; font-weight: bold; font-size: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 10; display: flex; justify-content: center; align-items: center; position: relative; }
+        .header { background: #35495e; color: white; padding: 12px; text-align: center; font-weight: bold; font-size: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 10; position: relative; display: flex; justify-content: center; align-items: center; }
         #chat-box { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px; }
-        .msg { max-width: 80%; padding: 10px 14px; border-radius: 15px; font-size: 15px; line-height: 1.5; word-wrap: break-word; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .msg { max-width: 80%; padding: 10px 14px; border-radius: 15px; font-size: 15px; line-height: 1.5; word-wrap: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
         .bot { align-self: flex-start; background: var(--bot-bubble); color: black; border-top-left-radius: 2px; }
         .user { align-self: flex-end; background: var(--user-bubble); color: black; border-top-right-radius: 2px; }
         .input-area-fixed { background: #f8f8f8; padding: 10px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
         .input-bar { display: flex; gap: 8px; }
-        input[type="text"], input[type="password"] { flex: 1; border: 1px solid #ccc; padding: 10px 15px; border-radius: 25px; font-size: 16px; outline: none; background: white; }
-        button { border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+        input[type="text"], input[type="password"] { flex: 1; border: 1px solid #ccc; padding: 10px 15px; border-radius: 25px; font-size: 16px; outline: none; }
+        button { border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; cursor: pointer; }
         .btn-blue { background: #007bff; color: white; }
         .btn-send { background: #28a745; color: white; }
         .btn-red { background: #dc3545; color: white; }
@@ -24,7 +24,7 @@
         .choice-btn { background: white; border: 1px solid #007bff; color: #007bff; padding: 8px 20px; }
         .hidden { display: none !important; }
         table { width: 100%; border-collapse: collapse; margin-top: 5px; background: white; font-size: 12px; }
-        th, td { border: 1px solid #ddd; padding: 5px; text-align: left; }
+        th, td { border: 1px solid #ddd; padding: 5px; }
         #auth-screen { flex:1; display:flex; align-items:center; justify-content:center; }
         #auth-area { padding: 30px; display: flex; flex-direction: column; gap: 15px; background: white; border-radius: 15px; width: 80%; max-width: 300px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
     </style>
@@ -121,12 +121,7 @@
         function sendMessage() {
             const el = document.getElementById("user-input");
             const val = el.value.trim();
-            if(!val) return;
-            if(!isWaitingForAnswer) {
-                addMsg("user", val);
-                addMsg("bot", "問題が出ていないようです。モードを選択してください。");
-                el.value = ""; return;
-            }
+            if(!val || !isWaitingForAnswer) return;
             handleAnswer(val); el.value = "";
         }
 
@@ -143,11 +138,10 @@
             qId = data.id; isWaitingForAnswer = true;
             let text = `<b>Q${qCount}</b> [${data.genre}]<br>${data.question}`;
             if(data.choices) {
-                let choiceTxt = Array.isArray(data.choices) ? data.choices.join("<br>") : data.choices.replace(/\n/g, "<br>");
-                text += `<br><br>【選択肢】<br>${choiceTxt}`;
+                text += `<br><br>【選択肢】<br>${data.choices.join("<br>")}`;
+                document.getElementById("choice-area").classList.remove("hidden");
             }
             addMsg("bot", text);
-            if (mode === "1") document.getElementById("choice-area").classList.remove("hidden");
             document.getElementById("user-input").focus();
         }
 
@@ -155,6 +149,7 @@
             isWaitingForAnswer = false; addMsg("user", val); hideAllControls();
             const res = await fetch('/check_answer', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: mode, id: qId, answer: val, session_id: sessionId}) });
             const data = await res.json();
+            
             let fb = "";
             if (mode === "1") {
                 fb = `<b>${data.score ? "⭕ 正解！" : "❌ 不正解..." }</b><br>正解: ${data.correct}<br><br>【解説】<br>${data.explanation}`;
