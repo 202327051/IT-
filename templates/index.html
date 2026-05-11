@@ -7,28 +7,35 @@
     <style>
         :root { --bg-color: #7494c0; --bot-bubble: #ffffff; --user-bubble: #85e249; }
         body, html { height: 100%; margin: 0; font-family: sans-serif; background: var(--bg-color); display: flex; flex-direction: column; }
-        .header { background: #35495e; color: white; padding: 12px; text-align: center; font-weight: bold; }
+        .header { background: #35495e; color: white; padding: 12px; text-align: center; font-weight: bold; font-size: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 10; }
         #chat-box { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px; }
-        .msg { max-width: 80%; padding: 10px 14px; border-radius: 15px; font-size: 15px; line-height: 1.5; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .msg { max-width: 80%; padding: 10px 14px; border-radius: 15px; font-size: 15px; line-height: 1.5; word-wrap: break-word; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
         .bot { align-self: flex-start; background: var(--bot-bubble); color: black; border-top-left-radius: 2px; }
         .user { align-self: flex-end; background: var(--user-bubble); color: black; border-top-right-radius: 2px; }
-        #auth-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 20px; }
-        .auth-box { background: white; padding: 30px; border-radius: 15px; width: 80%; max-width: 300px; display: flex; flex-direction: column; gap: 15px; }
-        .auth-box input { padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
-        .input-area-fixed { background: #f8f8f8; padding: 10px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 10px; }
+        .input-area-fixed { background: #f8f8f8; padding: 10px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-        .btn-blue { background: #007bff; color: white; border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; }
-        .btn-red { background: #dc3545; color: white; border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; }
-        .btn-gray { background: #6c757d; color: white; border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; }
+        .input-bar { display: flex; gap: 8px; }
+        input[type="text"], input[type="password"] { flex: 1; border: 1px solid #ccc; padding: 10px 15px; border-radius: 25px; font-size: 16px; outline: none; background: white; }
+        button { border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+        .btn-blue { background: #007bff; color: white; }
+        .btn-send { background: #28a745; color: white; }
+        .btn-red { background: #dc3545; color: white; }
+        .btn-gray { background: #6c757d; color: white; }
+        .choice-btn { background: white; border: 1px solid #007bff; color: #007bff; padding: 8px 20px; }
         .hidden { display: none !important; }
-        table { width: 100%; border-collapse: collapse; background: white; font-size: 12px; }
-        th, td { border: 1px solid #ddd; padding: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 5px; background: white; font-size: 12px; }
+        th, td { border: 1px solid #ddd; padding: 5px; text-align: left; }
+        
+        /* ログインエリア */
+        #auth-area { padding: 20px; display: flex; flex-direction: column; gap: 10px; background: white; margin: auto; border-radius: 15px; width: 80%; max-width: 300px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
     </style>
 </head>
 <body>
-    <div id="auth-container">
-        <h2 style="color: white;">ITパスポート学習ボット</h2>
-        <div class="auth-box">
+    <div class="header">ITパスポート学習チャット</div>
+    
+    <div id="auth-screen" style="flex:1; display:flex; align-items:center;">
+        <div id="auth-area">
+            <h3 style="text-align:center; margin-top:0;">ログイン / 新規登録</h3>
             <input type="text" id="username" placeholder="ユーザー名">
             <input type="password" id="password" placeholder="パスワード">
             <button onclick="auth('login')" class="btn-blue">ログイン</button>
@@ -36,46 +43,78 @@
         </div>
     </div>
 
-    <div id="main-app" class="hidden" style="height: 100%; display: flex; flex-direction: column;">
-        <div class="header">ITパスポート学習チャット <button onclick="logout()" class="btn-red" style="font-size: 10px; float: right;">退出</button></div>
+    <div id="chat-screen" class="hidden" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
         <div id="chat-box"></div>
         <div class="input-area-fixed">
             <div id="mode-select" class="controls">
                 <button onclick="startApp('1')" class="btn-blue">過去問モード</button>
                 <button onclick="startApp('2')" class="btn-blue">用語説明モード</button>
             </div>
+            <div id="choice-area" class="controls hidden">
+                <button class="choice-btn" onclick="handleAnswer('ア')">ア</button>
+                <button class="choice-btn" onclick="handleAnswer('イ')">イ</button>
+                <button class="choice-btn" onclick="handleAnswer('ウ')">ウ</button>
+                <button class="choice-btn" onclick="handleAnswer('エ')">エ</button>
+            </div>
             <div id="next-area" class="controls hidden">
-                <button onclick="loadQuestion()" class="btn-blue">次の問題</button>
-                <button onclick="finishApp()" id="finish-btn" class="btn-red">終了・集計</button>
+                <button onclick="loadQuestion()" class="btn-blue">次の問題へ</button>
+                <button id="finish-btn" onclick="finishApp()" class="btn-red">終了・集計</button>
+                <button id="exit-btn" onclick="backToTop()" class="btn-gray hidden">トップへ戻る</button>
             </div>
             <div id="menu-area" class="controls hidden">
-                <button onclick="startApp('1')" class="btn-blue">再挑戦</button>
+                <button onclick="startApp('1')" class="btn-blue">過去問モード</button>
+                <button onclick="startApp('2')" class="btn-blue">用語説明モード</button>
                 <button onclick="showGraph()" class="btn-blue">成績グラフ</button>
+                <button onclick="backToTop()" class="btn-gray">トップに戻る</button>
             </div>
-            <div class="input-bar" style="display: flex; gap: 5px;">
-                <input type="text" id="user-input" style="flex:1; border-radius:20px; padding:8px;" placeholder="答えを入力...">
-                <button onclick="sendMessage()" class="btn-blue">送信</button>
+            <div id="graph-menu" class="controls hidden">
+                <button onclick="confirmReset()" class="btn-red">履歴リセット</button>
+                <button onclick="backToTop()" class="btn-gray">戻る</button>
+            </div>
+            <div class="input-bar">
+                <input type="text" id="user-input" placeholder="答えを入力..." onkeypress="if(event.keyCode==13) sendMessage()">
+                <button onclick="sendMessage()" class="btn-send">送信</button>
+                <button onclick="logout()" class="btn-gray" style="border-radius:50%; width:40px; padding:0;">✕</button>
             </div>
         </div>
     </div>
 
     <script>
-        let mode = "", qId = null, qCount = 0, isWaiting = false;
+        let mode = "", qId = null, qCount = 0, isWaitingForAnswer = false;
 
+        // --- 認証ロジック (バグ修正版) ---
         async function auth(type) {
-            const user = document.getElementById("username").value;
-            const pass = document.getElementById("password").value;
-            const res = await fetch('/' + type, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, password: pass }) });
+            const u = document.getElementById("username").value;
+            const p = document.getElementById("password").value;
+            if(!u || !p) return alert("入力してください");
+
+            const res = await fetch('/' + type, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: u, password: p})
+            });
             const data = await res.json();
-            if (res.ok) {
-                document.getElementById("auth-container").classList.add("hidden");
-                document.getElementById("main-app").classList.remove("hidden");
-                addMsg("bot", "ログインしました。モードを選択してください。");
-            } else { alert(data.error); }
+
+            if(res.ok) {
+                if(type === 'register') {
+                    // 新規登録成功なら、そのままログインを実行する
+                    return auth('login');
+                }
+                // ログイン成功
+                document.getElementById("auth-screen").classList.add("hidden");
+                document.getElementById("chat-screen").classList.remove("hidden");
+                initChat();
+            } else {
+                alert(data.error);
+            }
         }
 
-        async function logout() { await fetch('/logout'); location.reload(); }
+        async function logout() {
+            await fetch('/logout');
+            location.reload();
+        }
 
+        // --- 既存のチャットロジック (維持) ---
         function addMsg(sender, text) {
             const box = document.getElementById("chat-box");
             const div = document.createElement("div");
@@ -85,58 +124,101 @@
             box.scrollTop = box.scrollHeight;
         }
 
-        function startApp(m) { mode = m; qCount = 0; loadQuestion(); }
-
-        async function loadQuestion() {
-            qCount++; hideAll();
-            const res = await fetch('/get_question', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: mode}) });
-            const data = await res.json();
-            qId = data.id; isWaiting = true;
-            let text = `<b>Q${qCount}</b><br>${data.question}`;
-            if(data.choices) text += `<br><br>${data.choices.join("<br>")}`;
-            addMsg("bot", text);
+        function initChat() { 
+            isWaitingForAnswer = false;
+            addMsg("bot", "ITパスポート学習ボットです。まずは下のボタンからモードを選んでください。"); 
         }
 
         function sendMessage() {
-            const val = document.getElementById("user-input").value.trim();
-            if(!val || !isWaiting) return;
-            handleAnswer(val);
-            document.getElementById("user-input").value = "";
+            const el = document.getElementById("user-input");
+            const val = el.value.trim();
+            if(!val) return;
+            if(!isWaitingForAnswer) {
+                addMsg("user", val);
+                addMsg("bot", "問題が出ていないようです。モードを選択してください。");
+                el.value = ""; return;
+            }
+            handleAnswer(val); el.value = "";
+        }
+
+        function startApp(m) {
+            mode = m; qCount = 0; hideAllControls();
+            addMsg("bot", `<b>--- モード${m}を開始 ---</b>`);
+            loadQuestion();
+        }
+
+        async function loadQuestion() {
+            qCount++; hideAllControls();
+            const res = await fetch('/get_question', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: mode}) });
+            const data = await res.json();
+            qId = data.id; isWaitingForAnswer = true;
+            let text = `<b>Q${qCount}</b> [${data.genre}]<br>${data.question}`;
+            if(data.choices) {
+                let choiceTxt = Array.isArray(data.choices) ? data.choices.join("<br>") : data.choices.replace(/\n/g, "<br>");
+                text += `<br><br>【選択肢】<br>${choiceTxt}`;
+            }
+            addMsg("bot", text);
+            if (mode === "1") document.getElementById("choice-area").classList.remove("hidden");
+            document.getElementById("user-input").focus();
         }
 
         async function handleAnswer(val) {
-            isWaiting = false; addMsg("user", val); hideAll();
+            isWaitingForAnswer = false; addMsg("user", val); hideAllControls();
             const res = await fetch('/check_answer', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: mode, id: qId, answer: val}) });
             const data = await res.json();
-            let fb = `<b>採点結果</b>: ${data.score}/${data.max}<br>`;
-            if(mode === "2") {
-                fb += `キーワード: ${data.keywords.join(", ")}<br>`;
-                if(data.score < data.max) fb += `<span style="color:red">不足: ${data.miss.join(", ")}</span>`;
-                else fb += `<span style="color:blue">✨完璧です！</span>`;
+            let fb = "";
+            if (mode === "1") {
+                fb = `<b>${data.score ? "⭕ 正解！" : "❌ 不正解..." }</b><br>正解: ${data.correct}<br><br>【解説】<br>${data.explanation}`;
+                document.getElementById("finish-btn").classList.remove("hidden");
+                document.getElementById("exit-btn").classList.add("hidden");
             } else {
-                fb += data.score ? "⭕正解" : `❌不正解<br>正解: ${data.correct}`;
+                fb = `<b>採点結果</b><br>得点: ${data.score} / ${data.max}<br>必須キーワード: ${data.keywords.join(", ")}<br>`;
+                if(data.miss && data.miss.length > 0) fb += `<span style="color:red">不足: ${data.miss.join(", ")}</span><br>`;
+                else fb += `<span style="color:blue">✨キーワードをすべて網羅しています！</span><br>`;
+                fb += `<br><b>【模範解答】</b><br>${data.correct}`;
+                document.getElementById("finish-btn").classList.add("hidden");
+                document.getElementById("exit-btn").classList.remove("hidden");
             }
-            addMsg("bot", fb);
+            addMsg("bot", fb.replace(/\n/g, "<br>"));
             document.getElementById("next-area").classList.remove("hidden");
-            if(mode === "1") document.getElementById("finish-btn").classList.remove("hidden");
         }
 
         async function finishApp() {
+            isWaitingForAnswer = false; hideAllControls();
             const res = await fetch('/get_final_stats');
             const data = await res.json();
-            let h = `<b>結果</b>: ${data.total_rate}%<br><table><tr><th>ジャンル</th><th>率</th></tr>`;
-            data.genre_stats.forEach(s => h += `<tr><td>${s.ジャンル}</td><td>${s.rate}%</td></tr>`);
-            addMsg("bot", h + "</table>");
-            hideAll(); document.getElementById("menu-area").classList.remove("hidden");
+            let html = `<b>学習結果</b>: ${data.total_rate}% (${data.total_score}/${data.total_max})<br><table><tr><th>ジャンル</th><th>正答率</th></tr>`;
+            data.genre_stats.forEach(s => html += `<tr><td>${s.ジャンル}</td><td>${s.rate}%</td></tr>`);
+            addMsg("bot", html + "</table><br>次はどうしますか？");
+            document.getElementById("menu-area").classList.remove("hidden");
         }
 
         async function showGraph() {
+            isWaitingForAnswer = false; hideAllControls();
             const res = await fetch('/get_graph');
             const data = await res.json();
-            addMsg("bot", `<img src="data:image/png;base64,${data.plot}" style="width:100%;">`);
+            if(data.error) return addMsg("bot", "まだグラフを表示するデータがありません。");
+            addMsg("bot", `<b>成績推移グラフ</b><br><img src="data:image/png;base64,${data.plot}" style="width:100%; border-radius:10px;">`);
+            document.getElementById("graph-menu").classList.remove("hidden");
         }
 
-        function hideAll() { ["mode-select", "next-area", "menu-area"].forEach(id => document.getElementById(id).classList.add("hidden")); }
+        function backToTop() { 
+            hideAllControls(); 
+            document.getElementById("mode-select").classList.remove("hidden"); 
+            addMsg("bot", "モードを選んでください。");
+        }
+
+        function hideAllControls() { 
+            ["mode-select", "choice-area", "next-area", "menu-area", "graph-menu"].forEach(id => {
+                const target = document.getElementById(id); if(target) target.classList.add("hidden");
+            });
+        }
+
+        async function confirmReset() { 
+            if(confirm("個人の履歴をリセットしますか？")) { 
+                await fetch('/reset_history', {method: 'POST'}); location.reload();
+            } 
+        }
     </script>
 </body>
 </html>
