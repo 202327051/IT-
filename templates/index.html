@@ -5,140 +5,77 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ITパスポート学習ボット</title>
     <style>
-        :root {
-            --bg-color: #7494c0;
-            --bot-bubble: #ffffff;
-            --user-bubble: #85e249;
-        }
+        :root { --bg-color: #7494c0; --bot-bubble: #ffffff; --user-bubble: #85e249; }
         body, html { height: 100%; margin: 0; font-family: sans-serif; background: var(--bg-color); display: flex; flex-direction: column; }
-        .header { background: #35495e; color: white; padding: 12px; text-align: center; font-weight: bold; font-size: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 10; }
-        
+        .header { background: #35495e; color: white; padding: 12px; text-align: center; font-weight: bold; }
         #chat-box { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px; }
-        
-        .msg { max-width: 80%; padding: 10px 14px; border-radius: 15px; font-size: 15px; line-height: 1.5; word-wrap: break-word; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .msg { max-width: 80%; padding: 10px 14px; border-radius: 15px; font-size: 15px; line-height: 1.5; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
         .bot { align-self: flex-start; background: var(--bot-bubble); color: black; border-top-left-radius: 2px; }
         .user { align-self: flex-end; background: var(--user-bubble); color: black; border-top-right-radius: 2px; }
-        
-        /* 認証エリアのスタイル */
-        #auth-container { 
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(116, 148, 192, 0.95); z-index: 100; 
-            display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 20px;
-        }
-        .auth-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); width: 80%; max-width: 300px; display: flex; flex-direction: column; gap: 15px; }
-        .auth-box input { padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; }
-
-        .input-area-fixed { background: #f8f8f8; padding: 10px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+        #auth-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 20px; }
+        .auth-box { background: white; padding: 30px; border-radius: 15px; width: 80%; max-width: 300px; display: flex; flex-direction: column; gap: 15px; }
+        .auth-box input { padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
+        .input-area-fixed { background: #f8f8f8; padding: 10px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 10px; }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-        .input-bar { display: flex; gap: 8px; }
-        
-        input[type="text"] { flex: 1; border: 1px solid #ccc; padding: 10px 15px; border-radius: 25px; font-size: 16px; outline: none; background: white; }
-        button { border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
-        button:active { opacity: 0.7; }
-        
-        .btn-blue { background: #007bff; color: white; }
-        .btn-send { background: #28a745; color: white; }
-        .btn-red { background: #dc3545; color: white; }
-        .btn-gray { background: #6c757d; color: white; }
-        .choice-btn { background: white; border: 1px solid #007bff; color: #007bff; padding: 8px 20px; }
-        
+        .btn-blue { background: #007bff; color: white; border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; }
+        .btn-red { background: #dc3545; color: white; border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; }
+        .btn-gray { background: #6c757d; color: white; border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; }
         .hidden { display: none !important; }
-        table { width: 100%; border-collapse: collapse; margin-top: 5px; background: white; font-size: 12px; }
-        th, td { border: 1px solid #ddd; padding: 5px; text-align: left; }
+        table { width: 100%; border-collapse: collapse; background: white; font-size: 12px; }
+        th, td { border: 1px solid #ddd; padding: 5px; }
     </style>
 </head>
 <body>
     <div id="auth-container">
-        <h2 style="color: white;">学習ボット ログイン</h2>
+        <h2 style="color: white;">ITパスポート学習ボット</h2>
         <div class="auth-box">
             <input type="text" id="username" placeholder="ユーザー名">
             <input type="password" id="password" placeholder="パスワード">
             <button onclick="auth('login')" class="btn-blue">ログイン</button>
-            <button onclick="auth('register')" class="btn-gray">新規ユーザー登録</button>
+            <button onclick="auth('register')" class="btn-gray">新規登録</button>
         </div>
     </div>
 
     <div id="main-app" class="hidden" style="height: 100%; display: flex; flex-direction: column;">
-        <div class="header">
-            ITパスポート学習チャット 
-            <button onclick="handleLogout()" style="float: right; padding: 2px 10px; font-size: 10px;" class="btn-red">ログアウト</button>
-        </div>
-        
+        <div class="header">ITパスポート学習チャット <button onclick="logout()" class="btn-red" style="font-size: 10px; float: right;">退出</button></div>
         <div id="chat-box"></div>
-
         <div class="input-area-fixed">
             <div id="mode-select" class="controls">
                 <button onclick="startApp('1')" class="btn-blue">過去問モード</button>
                 <button onclick="startApp('2')" class="btn-blue">用語説明モード</button>
             </div>
-
-            <div id="choice-area" class="controls hidden">
-                <button class="choice-btn" onclick="handleAnswer('ア')">ア</button>
-                <button class="choice-btn" onclick="handleAnswer('イ')">イ</button>
-                <button class="choice-btn" onclick="handleAnswer('ウ')">ウ</button>
-                <button class="choice-btn" onclick="handleAnswer('エ')">エ</button>
-            </div>
-
             <div id="next-area" class="controls hidden">
-                <button onclick="loadQuestion()" class="btn-blue">次の問題へ</button>
-                <button id="finish-btn" onclick="finishApp()" class="btn-red">終了・集計</button>
-                <button id="exit-btn" onclick="backToTop()" class="btn-gray hidden">トップへ戻る</button>
+                <button onclick="loadQuestion()" class="btn-blue">次の問題</button>
+                <button onclick="finishApp()" id="finish-btn" class="btn-red">終了・集計</button>
             </div>
-
             <div id="menu-area" class="controls hidden">
-                <button onclick="startApp('1')" class="btn-blue">過去問モード</button>
-                <button onclick="startApp('2')" class="btn-blue">用語説明モード</button>
+                <button onclick="startApp('1')" class="btn-blue">再挑戦</button>
                 <button onclick="showGraph()" class="btn-blue">成績グラフ</button>
-                <button onclick="backToTop()" class="btn-gray">トップに戻る</button>
             </div>
-
-            <div id="graph-menu" class="controls hidden">
-                <button onclick="confirmReset()" class="btn-red">履歴リセット</button>
-                <button onclick="backToTop()" class="btn-gray">戻る</button>
-            </div>
-
-            <div class="input-bar">
-                <input type="text" id="user-input" placeholder="答えを入力..." onkeypress="if(event.keyCode==13) sendMessage()">
-                <button onclick="sendMessage()" class="btn-send">送信</button>
+            <div class="input-bar" style="display: flex; gap: 5px;">
+                <input type="text" id="user-input" style="flex:1; border-radius:20px; padding:8px;" placeholder="答えを入力...">
+                <button onclick="sendMessage()" class="btn-blue">送信</button>
             </div>
         </div>
     </div>
 
     <script>
-        let mode = ""; 
-        let qId = null; 
-        let qCount = 0;
-        let isWaitingForAnswer = false;
+        let mode = "", qId = null, qCount = 0, isWaiting = false;
 
-        // --- 認証用関数 ---
         async function auth(type) {
             const user = document.getElementById("username").value;
             const pass = document.getElementById("password").value;
-            if(!user || !pass) return alert("ユーザー名とパスワードを入力してください");
-
-            const res = await fetch('/' + type, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: user, password: pass })
-            });
+            const res = await fetch('/' + type, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, password: pass }) });
             const data = await res.json();
-            
             if (res.ok) {
-                alert(data.message);
                 document.getElementById("auth-container").classList.add("hidden");
                 document.getElementById("main-app").classList.remove("hidden");
-                initChat();
-            } else {
-                alert(data.error);
-            }
+                addMsg("bot", "ログインしました。モードを選択してください。");
+            } else { alert(data.error); }
         }
 
-        async function handleLogout() {
-            await fetch('/logout');
-            location.reload();
-        }
+        async function logout() { await fetch('/logout'); location.reload(); }
 
-        // --- 以下、既存のチャットロジックを微修正 ---
         function addMsg(sender, text) {
             const box = document.getElementById("chat-box");
             const div = document.createElement("div");
@@ -148,120 +85,58 @@
             box.scrollTop = box.scrollHeight;
         }
 
-        function initChat() { 
-            isWaitingForAnswer = false;
-            document.getElementById("chat-box").innerHTML = ""; // クリア
-            addMsg("bot", "ログインしました。ITパスポート学習ボットです。まずは下のボタンからモードを選んでください。"); 
+        function startApp(m) { mode = m; qCount = 0; loadQuestion(); }
+
+        async function loadQuestion() {
+            qCount++; hideAll();
+            const res = await fetch('/get_question', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: mode}) });
+            const data = await res.json();
+            qId = data.id; isWaiting = true;
+            let text = `<b>Q${qCount}</b><br>${data.question}`;
+            if(data.choices) text += `<br><br>${data.choices.join("<br>")}`;
+            addMsg("bot", text);
         }
 
         function sendMessage() {
-            const el = document.getElementById("user-input");
-            const val = el.value.trim();
-            if(!val) return;
-
-            if(!isWaitingForAnswer) {
-                addMsg("user", val);
-                addMsg("bot", "問題が出ていないようです。モードを選択してください。");
-                el.value = "";
-                return;
-            }
+            const val = document.getElementById("user-input").value.trim();
+            if(!val || !isWaiting) return;
             handleAnswer(val);
-            el.value = "";
-        }
-
-        function startApp(m) {
-            mode = m; qCount = 0; hideAllControls();
-            addMsg("bot", `<b>--- モード${m}を開始 ---</b>`);
-            loadQuestion();
-        }
-
-        async function loadQuestion() {
-            qCount++; hideAllControls();
-            const res = await fetch('/get_question', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: mode}) });
-            const data = await res.json();
-            qId = data.id;
-            isWaitingForAnswer = true;
-
-            let text = `<b>Q${qCount}</b> [${data.genre}]<br>${data.question}`;
-            if(data.choices) {
-                let choiceTxt = Array.isArray(data.choices) ? data.choices.join("<br>") : data.choices.replace(/\n/g, "<br>");
-                text += `<br><br>【選択肢】<br>${choiceTxt}`;
-            }
-            addMsg("bot", text);
-            if (mode === "1") document.getElementById("choice-area").classList.remove("hidden");
-            document.getElementById("user-input").focus();
+            document.getElementById("user-input").value = "";
         }
 
         async function handleAnswer(val) {
-            isWaitingForAnswer = false;
-            addMsg("user", val); hideAllControls();
-            
+            isWaiting = false; addMsg("user", val); hideAll();
             const res = await fetch('/check_answer', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: mode, id: qId, answer: val}) });
             const data = await res.json();
-            
-            let fb = "";
-            if (mode === "1") {
-                fb = `<b>${data.score ? "⭕ 正解！" : "❌ 不正解..." }</b><br>正解: ${data.correct}<br><br>【解説】<br>${data.explanation}`;
-                document.getElementById("finish-btn").classList.remove("hidden");
-                document.getElementById("exit-btn").classList.add("hidden");
+            let fb = `<b>採点結果</b>: ${data.score}/${data.max}<br>`;
+            if(mode === "2") {
+                fb += `キーワード: ${data.keywords.join(", ")}<br>`;
+                if(data.score < data.max) fb += `<span style="color:red">不足: ${data.miss.join(", ")}</span>`;
+                else fb += `<span style="color:blue">✨完璧です！</span>`;
             } else {
-                fb = `<b>採点結果</b><br>得点: ${data.score} / ${data.max}<br>`;
-                fb += `必須キーワード: ${data.keywords.join(", ")}<br>`;
-                if(data.miss && data.miss.length > 0) {
-                    fb += `<span style="color:red">不足: ${data.miss.join(", ")}</span><br>`;
-                } else {
-                    fb += `<span style="color:blue">✨キーワードをすべて網羅しています！</span><br>`;
-                }
-                fb += `<br><b>【模範解答】</b><br>${data.correct}`;
-                document.getElementById("finish-btn").classList.add("hidden");
-                document.getElementById("exit-btn").classList.remove("hidden");
+                fb += data.score ? "⭕正解" : `❌不正解<br>正解: ${data.correct}`;
             }
-            
-            addMsg("bot", fb.replace(/\n/g, "<br>"));
+            addMsg("bot", fb);
             document.getElementById("next-area").classList.remove("hidden");
+            if(mode === "1") document.getElementById("finish-btn").classList.remove("hidden");
         }
 
         async function finishApp() {
-            isWaitingForAnswer = false;
-            hideAllControls();
             const res = await fetch('/get_final_stats');
             const data = await res.json();
-            let html = `<b>学習結果</b>: ${data.total_rate}% (${data.total_score}/${data.total_max})<br><table><tr><th>ジャンル</th><th>正答率</th></tr>`;
-            data.genre_stats.forEach(s => html += `<tr><td>${s.ジャンル}</td><td>${s.rate}%</td></tr>`);
-            addMsg("bot", html + "</table><br>次はどうしますか？");
-            document.getElementById("menu-area").classList.remove("hidden");
+            let h = `<b>結果</b>: ${data.total_rate}%<br><table><tr><th>ジャンル</th><th>率</th></tr>`;
+            data.genre_stats.forEach(s => h += `<tr><td>${s.ジャンル}</td><td>${s.rate}%</td></tr>`);
+            addMsg("bot", h + "</table>");
+            hideAll(); document.getElementById("menu-area").classList.remove("hidden");
         }
 
         async function showGraph() {
-            isWaitingForAnswer = false;
-            hideAllControls();
             const res = await fetch('/get_graph');
             const data = await res.json();
-            if(data.error) return addMsg("bot", "まだグラフを表示するデータがありません。");
-            addMsg("bot", `<b>成績推移グラフ</b><br><img src="data:image/png;base64,${data.plot}" style="width:100%; border-radius:10px;">`);
-            document.getElementById("graph-menu").classList.remove("hidden");
+            addMsg("bot", `<img src="data:image/png;base64,${data.plot}" style="width:100%;">`);
         }
 
-        function backToTop() { 
-            hideAllControls(); 
-            document.getElementById("mode-select").classList.remove("hidden"); 
-            addMsg("bot", "モードを選択してください。"); 
-        }
-
-        function hideAllControls() { 
-            ["mode-select", "choice-area", "next-area", "menu-area", "graph-menu"].forEach(id => {
-                const target = document.getElementById(id);
-                if(target) target.classList.add("hidden");
-            });
-        }
-
-        async function confirmReset() { 
-            if(confirm("個人の履歴をリセットしてもよろしいですか？")) { 
-                await fetch('/reset_history', {method: 'POST'}); 
-                initChat();
-                backToTop();
-            } 
-        }
+        function hideAll() { ["mode-select", "next-area", "menu-area"].forEach(id => document.getElementById(id).classList.add("hidden")); }
     </script>
 </body>
 </html>
