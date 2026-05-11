@@ -47,7 +47,6 @@ def normalize_choice(text):
     mapping = {"a": "ア", "ａ": "ア", "i": "イ", "ｉ": "イ", "u": "ウ", "ｕ": "ウ", "e": "エ", "ｅ": "エ"}
     return mapping.get(text, text)
 
-# 起動時にテーブル作成
 conn = sqlite3.connect(DB_PATH)
 conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)")
 conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
@@ -147,7 +146,6 @@ def check_answer():
 def get_final_stats():
     session_id = request.json.get("session_id")
     conn = sqlite3.connect(DB_PATH)
-    # 現在のユーザー・現在のセッション・過去問モード(1)のみを集計
     row = conn.execute("SELECT SUM(得点), SUM(満点) FROM history WHERE user_id = ? AND session_id = ? AND mode = '1'", (current_user.id, session_id)).fetchone()
     total_score, total_max = row[0] or 0, row[1] or 0
     total_rate = (total_score / total_max * 100) if total_max > 0 else 0
@@ -163,21 +161,14 @@ def get_final_stats():
 @app.route('/get_graph')
 @login_required
 def get_graph():
-    # ID順に取得することで、たとえ同じ時刻でもデータが重ならず右へ進むようにする
     df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=? ORDER BY id ASC", sqlite3.connect(DB_PATH), params=(current_user.id,))
-    
     if df.empty: 
         return jsonify({"error": "No data"})
     
     plt.figure(figsize=(6, 4))
-    
-    # プロット位置を数値インデックス(0, 1, 2...)に固定
     x_indices = range(len(df))
     plt.plot(x_indices, df['accuracy'], marker='o', linestyle='-', linewidth=2)
-    
-    # X軸のラベルのみを時刻文字列に差し替え
     plt.xticks(x_indices, df['timestamp'], rotation=30, ha='right')
-    
     plt.title("Progress")
     plt.ylabel("Accuracy (%)")
     plt.ylim(-5, 105)
