@@ -16,7 +16,7 @@
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
         .input-bar { display: flex; gap: 8px; }
         input[type="text"], input[type="password"] { flex: 1; border: 1px solid #ccc; padding: 10px 15px; border-radius: 25px; font-size: 16px; outline: none; }
-        button { border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; cursor: pointer; }
+        button { border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
         .btn-blue { background: #007bff; color: white; }
         .btn-send { background: #28a745; color: white; }
         .btn-red { background: #dc3545; color: white; }
@@ -24,7 +24,7 @@
         .choice-btn { background: white; border: 1px solid #007bff; color: #007bff; padding: 8px 20px; }
         .hidden { display: none !important; }
         table { width: 100%; border-collapse: collapse; margin-top: 5px; background: white; font-size: 12px; }
-        th, td { border: 1px solid #ddd; padding: 5px; }
+        th, td { border: 1px solid #ddd; padding: 5px; text-align: left; }
         #auth-screen { flex:1; display:flex; align-items:center; justify-content:center; }
         #auth-area { padding: 30px; display: flex; flex-direction: column; gap: 15px; background: white; border-radius: 15px; width: 80%; max-width: 300px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
     </style>
