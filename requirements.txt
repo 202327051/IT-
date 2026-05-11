@@ -1,7 +1,7 @@
-Flask
-Flask-CORS
+flask
+flask-cors
+flask-login
 pandas
 matplotlib
-
+werkzeug
 gunicorn
-
