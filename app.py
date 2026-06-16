@@ -47,7 +47,8 @@ def normalize_choice(text):
     mapping = {"a": "ア", "ａ": "ア", "i": "イ", "ｉ": "イ", "u": "ウ", "ｕ": "ウ", "e": "エ", "ｅ": "エ"}
     return mapping.get(text, text)
 
-conn = sqlite3.connect(DB_PATH)
+# 【修正1】DB初期化に timeout=30 を追加
+conn = sqlite3.connect(DB_PATH, timeout=30)
 conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)")
 conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
 conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp TEXT, accuracy REAL)")
@@ -62,7 +63,8 @@ def register():
     username = data.get('username')
     hashed_password = generate_password_hash(data.get('password'), method='pbkdf2:sha256')
     try:
-        db = sqlite3.connect(DB_PATH)
+        # 【修正2】新規登録に timeout=30 を追加
+        db = sqlite3.connect(DB_PATH, timeout=30)
         db.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_password))
         db.commit()
         db.close()
@@ -73,7 +75,8 @@ def register():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
-    db = sqlite3.connect(DB_PATH)
+    # 【修正3】ログインに timeout=30 を追加
+    db = sqlite3.connect(DB_PATH, timeout=30)
     user = db.execute("SELECT id, password FROM users WHERE username = ?", (data.get('username'),)).fetchone()
     db.close()
     if user and check_password_hash(user[1], data.get('password')):
@@ -134,7 +137,8 @@ def check_answer():
         current_score, max_score = len(hit), int(q["満点"])
         res.update({"score": current_score, "max": max_score, "correct": str(q["模範解答"]), "keywords": keywords, "miss": miss})
 
-    conn = sqlite3.connect(DB_PATH)
+    # 【修正4】答え合わせ時のデータ挿入に timeout=30 を追加
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute("INSERT INTO history (user_id, 問題ID, ジャンル, 回答, 得点, 満点, mode, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                  (current_user.id, int(q["id"]), q["ジャンル"], str(user_ans), current_score, res["max"], mode, session_id))
     conn.commit()
@@ -145,7 +149,8 @@ def check_answer():
 @login_required
 def get_final_stats():
     session_id = request.json.get("session_id")
-    conn = sqlite3.connect(DB_PATH)
+    # 【修正5】最終成績の集計・挿入に timeout=30 を追加
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     row = conn.execute("SELECT SUM(得点), SUM(満点) FROM history WHERE user_id = ? AND session_id = ? AND mode = '1'", (current_user.id, session_id)).fetchone()
     total_score, total_max = row[0] or 0, row[1] or 0
     total_rate = (total_score / total_max * 100) if total_max > 0 else 0
@@ -161,7 +166,11 @@ def get_final_stats():
 @app.route('/get_graph')
 @login_required
 def get_graph():
-    df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=? ORDER BY id ASC", sqlite3.connect(DB_PATH), params=(current_user.id,))
+    # 【安全対策】グラフ描画の読み込み接続にも timeout=30 を追加
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=? ORDER BY id ASC", conn, params=(current_user.id,))
+    conn.close()
+    
     if df.empty: 
         return jsonify({"error": "No data"})
     
@@ -185,7 +194,8 @@ def get_graph():
 @app.route('/reset_history', methods=['POST'])
 @login_required
 def reset_history():
-    conn = sqlite3.connect(DB_PATH)
+    # 【安全対策】データリセット処理に timeout=30 を追加
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute("DELETE FROM history WHERE user_id = ?", (current_user.id,))
     conn.execute("DELETE FROM session_stats WHERE user_id = ?", (current_user.id,))
     conn.commit()
@@ -193,4 +203,5 @@ def reset_history():
     return jsonify({"message": "Reset successful"})
 
 if __name__ == '__main__':
+    # 外部からのアクセス用に host='0.0.0.0' に固定
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
