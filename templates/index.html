@@ -53,9 +53,9 @@
             <div id="upload-area" class="controls hidden">
                 <div class="upload-zone">
                     <div style="margin-bottom: 8px;">
-                        【テンプレート】
-                        <span class="tmpl-link" onclick="location.href='/download_template/1'">過去問用</span> | 
-                        <span class="tmpl-link" onclick="location.href='/download_template/2'">用語説明用</span>
+                        【配布用CSVファイルをダウンロード】<br>
+                        <span class="tmpl-link" onclick="downloadSample('ITパスポート_過去問.csv')">ITパスポート_過去問.csv</span> | 
+                        <span class="tmpl-link" onclick="downloadSample('ITパスポート_用語.csv')">ITパスポート_用語.csv</span>
                     </div>
                     <hr style="border:0; border-top:1px solid #ccc; margin:8px 0;">
                     問題CSVを選択: <input type="file" id="csv-file" accept=".csv" style="font-size:11px;">
@@ -130,6 +130,17 @@
             box.scrollTop = box.scrollHeight;
         }
 
+        // GitHub(サーバー側)のフォルダからそのまま実物を受け取る関数
+        async function downloadSample(filename) {
+            const res = await fetch(`/download_template/${filename}`);
+            if (!res.ok) {
+                const data = await res.json();
+                alert(data.error);
+            } else {
+                window.location.href = `/download_template/${filename}`;
+            }
+        }
+
         async function initChat() {
             isWaitingForAnswer = false;
             hideAllControls();
@@ -153,7 +164,7 @@
                 });
                 selectArea.classList.remove("hidden");
             } else {
-                addMsg("bot", "まだ問題が登録されていません。上の「過去問用」または「用語説明用」のリンクから空のテンプレートをダウンロードし、編集してアップロードしてください！");
+                addMsg("bot", "まだ問題が登録されていません。配布用の実物CSVをダウンロードして、形式を変えずにファイルをアップロードしてください。");
             }
         }
 
@@ -182,7 +193,6 @@
             hideAllControls();
             addMsg("bot", `「${exam}」ですね。この資格で利用可能な学習モードを選んでください。`);
             
-            // 両方のモードボタンを一回隠してから、両方とも表示させる（サーバー側で対応する問題がある方を選んでもらう）
             document.getElementById("mode-select").classList.remove("hidden");
             document.getElementById("mode1-btn").classList.remove("hidden");
             document.getElementById("mode2-btn").classList.remove("hidden");
