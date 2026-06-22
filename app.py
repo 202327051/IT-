@@ -110,8 +110,13 @@ def get_question():
 
     res = {"id": int(q["id"]), "genre": q["ジャンル"], "question": str(question_text)}
     if mode == "1":
-        choices_raw = str(q["選択肢"])
-        res["choices"] = [c.strip() for c in choices_raw.split('\n') if c.strip()]
+        # 4つのカラムから選択肢を取得して、自動的に「ア：〜」の形に整形する
+        res["choices"] = [
+            f"ア：{q['ア']}",
+            f"イ：{q['イ']}",
+            f"ウ：{q['ウ']}",
+            f"エ：{q['エ']}"
+        ]
     return jsonify(res)
 
 @app.route('/check_answer', methods=['POST'])
