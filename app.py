@@ -80,24 +80,19 @@ def init_database():
 init_database()
 
 # -----------------------------
-# 【修正】サーバーに置かれたサンプルCSVファイルをそのままダウンロードさせる機能
+# 【完全修正】指定されたサンプルCSVを、そのままの名前と中身でダウンロードさせる
 # -----------------------------
 @app.route('/download_template/<filename>', methods=['GET'])
 @login_required
 def download_template(filename):
-    # セキュリティ対策（変なパスを指定されないようにファイル名だけを抽出）
     secure_filename = os.path.basename(filename)
     file_path = os.path.join(CSV_TEMPLATE_DIR, secure_filename)
     
-    # もしサーバー側にまだファイルが配置されていない場合は、仮のヘッダーファイルを作成してあげる
+    # サーバー側にファイルが存在するかチェック（なければ404エラーを返す）
     if not os.path.exists(file_path):
-        if "_過去問" in secure_filename:
-            header = "ジャンル,問題文,ア,イ,ウ,エ,正解,解説\n"
-        else:
-            header = "ジャンル,問題文,必須キーワード,模範解答\n"
-        with open(file_path, "wb") as f:
-            f.write(b'\xef\xbb\xbf' + header.encode("utf-8")) # BOM付きUTF-8
+        return jsonify({"error": f"サーバー側にサンプルファイル「{secure_filename}」が配置されていません。GitHubの templates/csv フォルダの中にファイルをアップロードしてください。"}), 404
 
+    # ファイル名そのままでダウンロードさせる
     return send_from_directory(CSV_TEMPLATE_DIR, secure_filename, as_attachment=True)
 
 # -----------------------------
