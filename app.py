@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory, abort
+from flask import Flask, request, jsonify, render_template, Response, send_from_directory # 👈 send_from_directory を追加
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -24,9 +24,6 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 
 DB_PATH = "history.db"
-
-# 【変更】GitHubの構成「templates/csv/」を正確に指すように設定
-CSV_TEMPLATE_DIR = os.path.join(app.root_path, 'templates', 'csv')
 
 class User(UserMixin):
     def __init__(self, id):
@@ -78,19 +75,21 @@ def init_database():
 init_database()
 
 # -----------------------------
-# 【修正】GitHub上の「templates/csv/○○.csv」をそのままダウンロードさせる
+# 【修正】実際のCSVファイルをダウンロードする機能（方法２）
 # -----------------------------
-@app.route('/download_template/<filename>', methods=['GET'])
+@app.route('/download_template/<mode_type>', methods=['GET'])
 @login_required
-def download_template(filename):
-    secure_filename = os.path.basename(filename)
-    file_path = os.path.join(CSV_TEMPLATE_DIR, secure_filename)
+def download_template(mode_type):
+    # CSVファイルが置かれているディレクトリパス（templates/csv）
+    directory = os.path.join(app.root_path, 'templates', 'csv')
     
-    # 指定されたファイルが templates/csv/ に実在するかチェック
-    if not os.path.exists(file_path):
-        return jsonify({"error": f"ファイル「{secure_filename}」が templates/csv/ 内に見つかりません。"}), 404
-
-    return send_from_directory(CSV_TEMPLATE_DIR, secure_filename, as_attachment=True)
+    if mode_type == "1":
+        filename = "〇〇_過去問.csv"  # 👈 実際のファイル名に書き換えてください
+    else:
+        filename = "〇〇_用語.csv"    # 👈 実際のファイル名に書き換えてください
+        
+    # 指定フォルダから実際のファイルを安全にダウンロード配信
+    return send_from_directory(directory, filename, as_attachment=True)
 
 # -----------------------------
 # ログインユーザーが登録した資格一覧の取得
@@ -105,7 +104,7 @@ def get_exams():
     return jsonify({"exams": exam_list})
 
 # -----------------------------
-# 【修正】CSVファイル アップロード機能（用語の読み込み不具合を解消）
+# CSVファイル アップロード機能（アンダースコア名判定版）
 # -----------------------------
 @app.route('/upload_csv', methods=['POST'])
 @login_required
@@ -117,8 +116,9 @@ def upload_csv():
     if file.filename == '':
         return jsonify({"error": "ファイル名が空です"}), 400
 
-    raw_filename = os.path.splitext(file.filename)[0]
+    raw_filename = os.path.splitext(file.filename)[0] # 拡張子なしのファイル名
     
+    # ファイル名から資格名とモードを自動判定
     if "_過去問" in raw_filename:
         mode = "1"
         exam_name = raw_filename.split("_過去問")[0]
@@ -130,6 +130,7 @@ def upload_csv():
 
     if file and file.filename.endswith('.csv'):
         try:
+            # Shift-JIS / UTF-8 両方のCSVに対応できるようにバイナリからデコード
             file_bytes = file.stream.read()
             try:
                 stream = io.StringIO(file_bytes.decode("utf-8-sig"), newline=None)
@@ -141,16 +142,16 @@ def upload_csv():
             df.columns = [c.strip() for c in df.columns]
             
             conn = sqlite3.connect(DB_PATH, timeout=30)
+            # 同じユーザー名・同じ資格・同じモードの既存データを上書き（一度削除）
             conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ? AND mode = ?", (current_user.id, exam_name, mode))
             
             for idx, q in df.iterrows():
                 genre = str(q.get("ジャンル", "一般")).strip()
                 prob = str(q.get("問題文", "")).strip()
                 if not prob:
-                    continue
+                    continue # 空行はスキップ
                 
                 if mode == "1":
-                    # 過去問の読み込み
                     ans = str(q.get("正解", "")).strip()
                     exp = str(q.get("解説", "")).strip()
                     conn.execute("""
@@ -158,22 +159,19 @@ def upload_csv():
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1')
                     """, (current_user.id, exam_name, genre, prob, str(q.get("ア","")), str(q.get("イ","")), str(q.get("ウ","")), str(q.get("エ","")), ans, exp))
                 else:
-                    # 用語説明の読み込み（元のCSVの列名「必須キーワード」「模範解答」に正確に合わせる）
-                    kw = str(q.get("必須キーワード", "")).strip()
                     ans = str(q.get("模範解答", "")).strip()
-                    
-                    # データベース上は、正解列に模範解答、解説列に必須キーワードを保存する形に統一
+                    kw = str(q.get("必須キーワード", "")).strip()
                     conn.execute("""
-                        INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, ア, イ, ウ, エ, 正解, 解説, mode)
-                        VALUES (?, ?, ?, ?, '', '', '', '', ?, ?, '2')
-                    """, (current_user.id, exam_name, genre, prob, ans, kw))
+                        INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, 正解, 解説, mode)
+                        VALUES (?, ?, ?, ?, ?, ?, '2')
+                    """, (current_user.id, exam_name, genre, prob, ans, kw, '2'))
                     
             conn.commit()
             conn.close()
             mode_str = "過去問モード" if mode == "1" else "用語説明モード"
             return jsonify({"message": f"「{exam_name}」を{mode_str}用として正常に登録しました！"})
         except Exception as e:
-            return jsonify({"error": f"CSVの解析に失敗しました: {str(e)}"}), 500
+            return jsonify({"error": f"CSVの解析に失敗しました: {str(e)}\nテンプレートCSVをダウンロードして、形式を合わせてください。"}), 500
 
     return jsonify({"error": "CSVファイルをアップロードしてください"}), 400
 
@@ -248,9 +246,6 @@ def get_question():
         res["choices"] = [f"ア：{q[3]}", f"イ：{q[4]}", f"ウ：{q[5]}", f"エ：{q[6]}"]
     return jsonify(res)
 
-# -----------------------------
-# 【修正】採点機能（用語のキーワード判定のバグ修正）
-# -----------------------------
 @app.route('/check_answer', methods=['POST'])
 @login_required
 def check_answer():
@@ -267,7 +262,6 @@ def check_answer():
         current_score = 1 if is_correct else 0
         res.update({"score": current_score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        # q[1]に模範解答、q[2]に必須キーワードが入っている
         raw_kw = str(q[2]).replace('"', '').replace('「', '').replace('」', '').replace("、", ",")
         keywords = [k.strip() for k in raw_kw.split(",") if k.strip()]
         
