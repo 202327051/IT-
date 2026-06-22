@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, Response
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -53,7 +53,6 @@ def init_database():
     conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp TEXT, accuracy REAL)")
     
-    # 共通テーブル構造（解説カラム[解説]に必須キーワードを格納します）
     conn.execute("""
     CREATE TABLE IF NOT EXISTS questions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,6 +75,29 @@ def init_database():
 init_database()
 
 # -----------------------------
+# 【新規追加】空のCSVテンプレートをダウンロードする機能
+# -----------------------------
+@app.route('/download_template/<mode_type>', methods=['GET'])
+@login_required
+def download_template(mode_type):
+    if mode_type == "1":
+        # 過去問用のヘッダー
+        header = "ジャンル,問題文,ア,イ,ウ,エ,正解,解説\n"
+        filename = "template_kakomon.csv"
+    else:
+        # 用語説明用のヘッダー
+        header = "ジャンル,問題文,必須キーワード,模範解答\n"
+        filename = "template_yougo.csv"
+        
+    # Excelで文字化けしないようにBOM付きUTF-8で出力
+    csv_data = b'\xef\xbb\xbf' + header.encode("utf-8")
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-disposition": f"attachment; filename={filename}"}
+    )
+
+# -----------------------------
 # ログインユーザーが登録した資格一覧の取得
 # -----------------------------
 @app.route('/get_exams', methods=['GET'])
@@ -88,7 +110,7 @@ def get_exams():
     return jsonify({"exams": exam_list})
 
 # -----------------------------
-# CSVファイル アップロード機能（提出されたCSV形式に完全特化）
+# CSVファイル アップロード機能（アンダースコア名判定版）
 # -----------------------------
 @app.route('/upload_csv', methods=['POST'])
 @login_required
@@ -100,45 +122,51 @@ def upload_csv():
     if file.filename == '':
         return jsonify({"error": "ファイル名が空です"}), 400
 
+    raw_filename = os.path.splitext(file.filename)[0] # 拡張子なしのファイル名
+    
+    # ファイル名から資格名とモードを自動判定
+    if "_過去問" in raw_filename:
+        mode = "1"
+        exam_name = raw_filename.split("_過去問")[0]
+    elif "_用語" in raw_filename:
+        mode = "2"
+        exam_name = raw_filename.split("_用語")[0]
+    else:
+        return jsonify({"error": "ファイル名が正しくありません。末尾に「_過去問」または「_用語」をつけてください。\n例: ITパスポート_用語.csv"}), 400
+
     if file and file.filename.endswith('.csv'):
-        exam_name = os.path.splitext(file.filename)[0]
-        
         try:
-            # Excel等のShift-JIS、UTF-8両対応
+            # Shift-JIS / UTF-8 両方のCSVに対応できるようにバイナリからデコード
+            file_bytes = file.stream.read()
             try:
-                stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
+                stream = io.StringIO(file_bytes.decode("utf-8-sig"), newline=None)
                 df = pd.read_csv(stream)
             except:
-                file.stream.seek(0)
-                stream = io.StringIO(file.stream.read().decode("shift-jis"), newline=None)
+                stream = io.StringIO(file_bytes.decode("shift-jis"), newline=None)
                 df = pd.read_csv(stream)
             
-            # 列名の前後の空白を削除
             df.columns = [c.strip() for c in df.columns]
             
-            # 判定：選択肢「ア」があればモード1、なければ一律モード2（用語説明）
-            mode = "1" if "ア" in df.columns else "2"
-            
             conn = sqlite3.connect(DB_PATH, timeout=30)
-            # 既存の同一資格・同一モードのデータを削除して上書き
+            # 同じユーザー名・同じ資格・同じモードの既存データを上書き（一度削除）
             conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ? AND mode = ?", (current_user.id, exam_name, mode))
             
             for idx, q in df.iterrows():
-                genre = str(q.get("ジャンル", "一般"))
-                prob = str(q.get("問題文", ""))
+                genre = str(q.get("ジャンル", "一般")).strip()
+                prob = str(q.get("問題文", "")).strip()
+                if not prob:
+                    continue # 空行はスキップ
                 
                 if mode == "1":
-                    ans = str(q.get("正解", q.get("解答", "")))
-                    exp = str(q.get("解説", ""))
+                    ans = str(q.get("正解", "")).strip()
+                    exp = str(q.get("解説", "")).strip()
                     conn.execute("""
                         INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, ア, イ, ウ, エ, 正解, 解説, mode)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1')
                     """, (current_user.id, exam_name, genre, prob, str(q.get("ア","")), str(q.get("イ","")), str(q.get("ウ","")), str(q.get("エ","")), ans, exp))
                 else:
-                    # 遠山さんのCSVカラム名（模範解答、必須キーワード）に完全対応
-                    ans = str(q.get("模範解答", ""))
-                    kw = str(q.get("必須キーワード", ""))
-                    
+                    ans = str(q.get("模範解答", "")).strip()
+                    kw = str(q.get("必須キーワード", "")).strip()
                     conn.execute("""
                         INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, 正解, 解説, mode)
                         VALUES (?, ?, ?, ?, ?, ?, '2')
@@ -146,9 +174,10 @@ def upload_csv():
                     
             conn.commit()
             conn.close()
-            return jsonify({"message": f"「{exam_name}」を用語説明モード(モード2)として正常に登録しました！"})
+            mode_str = "過去問モード" if mode == "1" else "用語説明モード"
+            return jsonify({"message": f"「{exam_name}」を{mode_str}用として正常に登録しました！"})
         except Exception as e:
-            return jsonify({"error": f"CSVの解析に失敗しました: {str(e)} \nファイル形式を確認してください。"}), 500
+            return jsonify({"error": f"CSVの解析に失敗しました: {str(e)}\nテンプレートCSVをダウンロードして、形式を合わせてください。"}), 500
 
     return jsonify({"error": "CSVファイルをアップロードしてください"}), 400
 
@@ -239,7 +268,6 @@ def check_answer():
         current_score = 1 if is_correct else 0
         res.update({"score": current_score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        # クォーテーションや全角読点をクリアしてキーワードをリスト化
         raw_kw = str(q[2]).replace('"', '').replace('「', '').replace('」', '').replace("、", ",")
         keywords = [k.strip() for k in raw_kw.split(",") if k.strip()]
         
