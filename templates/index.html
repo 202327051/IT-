@@ -27,11 +27,12 @@
         th, td { border: 1px solid #ddd; padding: 5px; text-align: left; }
         #auth-screen { flex:1; display:flex; align-items:center; justify-content:center; }
         #auth-area { padding: 30px; display: flex; flex-direction: column; gap: 15px; background: white; border-radius: 15px; width: 80%; max-width: 300px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .upload-zone { background: #e9ecef; padding: 8px; border-radius: 10px; font-size: 12px; text-align: center; border: 1px dashed #6c757d; }
     </style>
 </head>
 <body>
     <div class="header">
-        資格試験対策用チャットボット
+        資格試験対策チャットボット
         <button id="logout-btn" onclick="logout()" class="btn-red hidden" style="position:absolute; right:10px; font-size:10px; padding:5px 10px;">ログアウト</button>
     </div>
 
@@ -48,7 +49,16 @@
     <div id="chat-screen" class="hidden" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
         <div id="chat-box"></div>
         <div class="input-area-fixed">
-            <div id="mode-select" class="controls">
+            <div id="upload-area" class="controls hidden">
+                <div class="upload-zone">
+                    自作の問題CSVを選択: <input type="file" id="csv-file" accept=".csv" style="font-size:11px;">
+                    <button onclick="uploadCSV()" class="btn-send" style="padding:4px 10px; font-size:11px;">登録</button>
+                </div>
+            </div>
+
+            <div id="exam-select" class="controls hidden"></div>
+            
+            <div id="mode-select" class="controls hidden">
                 <button onclick="startApp('1')" class="btn-blue">過去問モード</button>
                 <button onclick="startApp('2')" class="btn-blue">用語説明モード</button>
             </div>
@@ -67,7 +77,7 @@
                 <button onclick="startApp('1')" class="btn-blue">過去問モード</button>
                 <button onclick="startApp('2')" class="btn-blue">用語説明モード</button>
                 <button onclick="showGraph()" class="btn-blue">成績グラフ</button>
-                <button onclick="backToTop()" class="btn-gray">トップに戻る</button>
+                <button onclick="backToTop()" class="btn-gray">資格を選び直す</button>
             </div>
             <div id="graph-menu" class="controls hidden">
                 <button onclick="confirmReset()" class="btn-red">履歴リセット</button>
@@ -81,7 +91,7 @@
     </div>
 
     <script>
-        let mode = "", qId = null, qCount = 0, isWaitingForAnswer = false, sessionId = "";
+        let mode = "", qId = null, qCount = 0, isWaitingForAnswer = false, sessionId = ""; selectedExam = "";
 
         async function auth(type) {
             const u = document.getElementById("username").value;
@@ -113,10 +123,60 @@
             box.scrollTop = box.scrollHeight;
         }
 
-        function initChat() {
+        // 初期表示：アップロード枠と自分の資格一覧を表示
+        async function initChat() {
             isWaitingForAnswer = false;
-            // 【修正】挨拶テキストも汎用的に変更
-            addMsg("bot", "資格試験対策ボットです。まずは下のボタンからモードを選んでください。");
+            hideAllControls();
+            
+            document.getElementById("upload-area").classList.remove("hidden");
+            
+            const res = await fetch('/get_exams');
+            const data = await res.json();
+            
+            const selectArea = document.getElementById("exam-select");
+            selectArea.innerHTML = "";
+            
+            if (data.exams && data.exams.length > 0) {
+                addMsg("bot", "勉強したい自作の資格を選ぶか、新しい問題CSVをアップロードしてください。");
+                data.exams.forEach(exam => {
+                    const btn = document.createElement("button");
+                    btn.className = "btn-blue";
+                    btn.innerText = exam;
+                    btn.onclick = () => selectExamMode(exam);
+                    selectArea.appendChild(btn);
+                });
+                selectArea.classList.remove("hidden");
+            } else {
+                addMsg("bot", "まだ問題が登録されていません。上のボタンからオリジナルの問題集CSV（例：ITパスポート.csv など）をアップロードしてみましょう！");
+            }
+        }
+
+        // CSVアップロード処理
+        async function uploadCSV() {
+            const fileInput = document.getElementById("csv-file");
+            if (fileInput.files.length === 0) return alert("ファイルを選択してください");
+            
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+            
+            const res = await fetch('/upload_csv', { method: 'POST', body: formData });
+            const data = await res.json();
+            
+            if (res.ok) {
+                alert(data.message);
+                fileInput.value = ""; // クリア
+                initChat(); // リロード
+            } else {
+                alert(data.error);
+            }
+        }
+
+        function selectExamMode(exam) {
+            selectedExam = exam;
+            addMsg("user", `${exam} を勉強します`);
+            hideAllControls();
+            addMsg("bot", `「${exam}」ですね。学習モードを選んでください。`);
+            document.getElementById("mode-select").classList.remove("hidden");
         }
 
         function sendMessage() {
@@ -128,13 +188,17 @@
 
         function startApp(m) {
             mode = m; qCount = 0; sessionId = Date.now().toString(); hideAllControls();
-            addMsg("bot", `<b>--- モード${m}を開始 ---</b>`);
+            addMsg("bot", `<b>--- ${selectedExam} の モード${m} を開始 ---</b>`);
             loadQuestion();
         }
 
         async function loadQuestion() {
             qCount++; hideAllControls();
-            const res = await fetch('/get_question', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: mode}) });
+            const res = await fetch('/get_question', { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({mode: mode, exam_type: selectedExam}) 
+            });
             const data = await res.json();
             qId = data.id; isWaitingForAnswer = true;
             let text = `<b>Q${qCount}</b> [${data.genre}]<br>${data.question}`;
@@ -188,12 +252,11 @@
 
         function backToTop() {
             hideAllControls();
-            document.getElementById("mode-select").classList.remove("hidden");
             initChat();
         }
 
         function hideAllControls() {
-            ["mode-select", "choice-area", "next-area", "menu-area", "graph-menu"].forEach(id => {
+            ["upload-area", "exam-select", "mode-select", "choice-area", "next-area", "menu-area", "graph-menu"].forEach(id => {
                 const target = document.getElementById(id); if(target) target.classList.add("hidden");
             });
         }
