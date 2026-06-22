@@ -91,7 +91,7 @@
     </div>
 
     <script>
-        let mode = "", qId = null, qCount = 0, isWaitingForAnswer = false, sessionId = ""; selectedExam = "";
+        let mode = "", qId = null, qCount = 0, isWaitingForAnswer = false, sessionId = "", selectedExam = "";
 
         async function auth(type) {
             const u = document.getElementById("username").value;
@@ -123,7 +123,6 @@
             box.scrollTop = box.scrollHeight;
         }
 
-        // 初期表示：アップロード枠と自分の資格一覧を表示
         async function initChat() {
             isWaitingForAnswer = false;
             hideAllControls();
@@ -147,11 +146,10 @@
                 });
                 selectArea.classList.remove("hidden");
             } else {
-                addMsg("bot", "まだ問題が登録されていません。上のボタンからオリジナルの問題集CSV（例：ITパスポート.csv など）をアップロードしてみましょう！");
+                addMsg("bot", "まだ問題が登録されていません。上の入力欄からオリジナルの問題集CSV（例：ITパスポート.csv など）をアップロードしてください。");
             }
         }
 
-        // CSVアップロード処理
         async function uploadCSV() {
             const fileInput = document.getElementById("csv-file");
             if (fileInput.files.length === 0) return alert("ファイルを選択してください");
@@ -164,8 +162,8 @@
             
             if (res.ok) {
                 alert(data.message);
-                fileInput.value = ""; // クリア
-                initChat(); // リロード
+                fileInput.value = "";
+                initChat();
             } else {
                 alert(data.error);
             }
@@ -192,6 +190,7 @@
             loadQuestion();
         }
 
+        // 【修正箇所】エラーを検知してストップしないように制御を追加
         async function loadQuestion() {
             qCount++; hideAllControls();
             const res = await fetch('/get_question', { 
@@ -200,6 +199,14 @@
                 body: JSON.stringify({mode: mode, exam_type: selectedExam}) 
             });
             const data = await res.json();
+            
+            // サーバー側でデータが見つからない、またはundefinedが返ってきた場合の対策
+            if (!res.ok || data.error || !data.question) {
+                addMsg("bot", `<span style="color:red">⚠️「${selectedExam}」のモード${mode}に対応する問題データが見つかりません。CSVファイルの中に正しい形式でデータが入っているか確認するか、別のCSVを再度アップロードしてください。</span>`);
+                backToTop(); // 操作不能を避けるために自動でトップ（選択・アップロード画面）へ戻す
+                return;
+            }
+
             qId = data.id; isWaitingForAnswer = true;
             let text = `<b>Q${qCount}</b> [${data.genre}]<br>${data.question}`;
             if(data.choices) {
