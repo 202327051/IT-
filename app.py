@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, Response
+from flask import Flask, request, jsonify, render_template, send_from_directory, abort
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -24,6 +24,11 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 
 DB_PATH = "history.db"
+
+# サーバー側で管理者が用意するサンプルCSVの格納フォルダ
+CSV_TEMPLATE_DIR = os.path.join(app.root_path, 'templates', 'csv')
+if not os.path.exists(CSV_TEMPLATE_DIR):
+    os.makedirs(CSV_TEMPLATE_DIR)
 
 class User(UserMixin):
     def __init__(self, id):
@@ -75,27 +80,25 @@ def init_database():
 init_database()
 
 # -----------------------------
-# 【新規追加】空のCSVテンプレートをダウンロードする機能
+# 【修正】サーバーに置かれたサンプルCSVファイルをそのままダウンロードさせる機能
 # -----------------------------
-@app.route('/download_template/<mode_type>', methods=['GET'])
+@app.route('/download_template/<filename>', methods=['GET'])
 @login_required
-def download_template(mode_type):
-    if mode_type == "1":
-        # 過去問用のヘッダー
-        header = "ジャンル,問題文,ア,イ,ウ,エ,正解,解説\n"
-        filename = "template_kakomon.csv"
-    else:
-        # 用語説明用のヘッダー
-        header = "ジャンル,問題文,必須キーワード,模範解答\n"
-        filename = "template_yougo.csv"
-        
-    # Excelで文字化けしないようにBOM付きUTF-8で出力
-    csv_data = b'\xef\xbb\xbf' + header.encode("utf-8")
-    return Response(
-        csv_data,
-        mimetype="text/csv",
-        headers={"Content-disposition": f"attachment; filename={filename}"}
-    )
+def download_template(filename):
+    # セキュリティ対策（変なパスを指定されないようにファイル名だけを抽出）
+    secure_filename = os.path.basename(filename)
+    file_path = os.path.join(CSV_TEMPLATE_DIR, secure_filename)
+    
+    # もしサーバー側にまだファイルが配置されていない場合は、仮のヘッダーファイルを作成してあげる
+    if not os.path.exists(file_path):
+        if "_過去問" in secure_filename:
+            header = "ジャンル,問題文,ア,イ,ウ,エ,正解,解説\n"
+        else:
+            header = "ジャンル,問題文,必須キーワード,模範解答\n"
+        with open(file_path, "wb") as f:
+            f.write(b'\xef\xbb\xbf' + header.encode("utf-8")) # BOM付きUTF-8
+
+    return send_from_directory(CSV_TEMPLATE_DIR, secure_filename, as_attachment=True)
 
 # -----------------------------
 # ログインユーザーが登録した資格一覧の取得
@@ -110,7 +113,7 @@ def get_exams():
     return jsonify({"exams": exam_list})
 
 # -----------------------------
-# CSVファイル アップロード機能（アンダースコア名判定版）
+# CSVファイル アップロード機能
 # -----------------------------
 @app.route('/upload_csv', methods=['POST'])
 @login_required
@@ -122,9 +125,8 @@ def upload_csv():
     if file.filename == '':
         return jsonify({"error": "ファイル名が空です"}), 400
 
-    raw_filename = os.path.splitext(file.filename)[0] # 拡張子なしのファイル名
+    raw_filename = os.path.splitext(file.filename)[0]
     
-    # ファイル名から資格名とモードを自動判定
     if "_過去問" in raw_filename:
         mode = "1"
         exam_name = raw_filename.split("_過去問")[0]
@@ -136,7 +138,6 @@ def upload_csv():
 
     if file and file.filename.endswith('.csv'):
         try:
-            # Shift-JIS / UTF-8 両方のCSVに対応できるようにバイナリからデコード
             file_bytes = file.stream.read()
             try:
                 stream = io.StringIO(file_bytes.decode("utf-8-sig"), newline=None)
@@ -148,14 +149,13 @@ def upload_csv():
             df.columns = [c.strip() for c in df.columns]
             
             conn = sqlite3.connect(DB_PATH, timeout=30)
-            # 同じユーザー名・同じ資格・同じモードの既存データを上書き（一度削除）
             conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ? AND mode = ?", (current_user.id, exam_name, mode))
             
             for idx, q in df.iterrows():
                 genre = str(q.get("ジャンル", "一般")).strip()
                 prob = str(q.get("問題文", "")).strip()
                 if not prob:
-                    continue # 空行はスキップ
+                    continue
                 
                 if mode == "1":
                     ans = str(q.get("正解", "")).strip()
@@ -177,7 +177,7 @@ def upload_csv():
             mode_str = "過去問モード" if mode == "1" else "用語説明モード"
             return jsonify({"message": f"「{exam_name}」を{mode_str}用として正常に登録しました！"})
         except Exception as e:
-            return jsonify({"error": f"CSVの解析に失敗しました: {str(e)}\nテンプレートCSVをダウンロードして、形式を合わせてください。"}), 500
+            return jsonify({"error": f"CSVの解析に失敗しました: {str(e)}"}), 500
 
     return jsonify({"error": "CSVファイルをアップロードしてください"}), 400
 
