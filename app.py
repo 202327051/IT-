@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, Response, send_from_directory
+from flask import Flask, request, jsonify, render_template, Response, send_from_directory # 👈 send_from_directory を追加
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -48,7 +48,7 @@ def normalize_choice(text):
     return mapping.get(text, text)
 
 def init_database():
-    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn: # 👈 安全に自動クローズされるよう修正
         conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp TEXT, accuracy REAL)")
@@ -74,36 +74,22 @@ def init_database():
 init_database()
 
 # -----------------------------
-# 【修正】実際のCSVテンプレートファイルを自動スキャンしてダウンロードさせる機能
+# 【修正】用意しているCSVテンプレートをそのままダウンロードさせる機能
 # -----------------------------
 @app.route('/download_template/<mode_type>', methods=['GET'])
 @login_required
 def download_template(mode_type):
+    # CSVテンプレートが置いてあるフォルダパスを指定
     directory = os.path.join(app.root_path, 'templates', 'csv')
     
-    try:
-        files = os.listdir(directory)
-    except FileNotFoundError:
-        return jsonify({"error": "templates/csv フォルダが見つかりません"}), 404
-
-    target_file = None
+    # ここに「templates/csv/」内に置いている実際のファイル名を記述してください
     if mode_type == "1":
-        # フォルダ内から「_過去問.csv」で終わる実際のファイルを探す
-        for f in files:
-            if f.endswith('_過去問.csv'):
-                target_file = f
-                break
+        filename = "〇〇_過去問.csv"  # 👈 実際のファイル名に変更してください
     else:
-        # フォルダ内から「_用語.csv」で終わる実際のファイルを探す
-        for f in files:
-            if f.endswith('_用語.csv'):
-                target_file = f
-                break
-
-    if target_file:
-        return send_from_directory(directory, target_file, as_attachment=True)
-    else:
-        return jsonify({"error": "対応するCSVテンプレートファイルがフォルダ内に見つかりません"}), 404
+        filename = "〇〇_用語.csv"    # 👈 実際のファイル名に変更してください
+        
+    # 指定したフォルダから実際のファイルをそのまま配信
+    return send_from_directory(directory, filename, as_attachment=True)
 
 # -----------------------------
 # ログインユーザーが登録した資格一覧の取得
@@ -117,7 +103,7 @@ def get_exams():
     return jsonify({"exams": exam_list})
 
 # -----------------------------
-# CSVファイル アップロード機能
+# CSVファイル アップロード機能（アンダースコア名判定版）
 # -----------------------------
 @app.route('/upload_csv', methods=['POST'])
 @login_required
@@ -129,8 +115,9 @@ def upload_csv():
     if file.filename == '':
         return jsonify({"error": "ファイル名が空です"}), 400
 
-    raw_filename = os.path.splitext(file.filename)[0]
+    raw_filename = os.path.splitext(file.filename)[0] # 拡張子なしのファイル名
     
+    # ファイル名から資格名とモードを自動判定
     if "_過去問" in raw_filename:
         mode = "1"
         exam_name = raw_filename.split("_過去問")[0]
@@ -142,6 +129,7 @@ def upload_csv():
 
     if file and file.filename.endswith('.csv'):
         try:
+            # Shift-JIS / UTF-8 両方のCSVに対応できるようにバイナリからデコード
             file_bytes = file.stream.read()
             try:
                 stream = io.StringIO(file_bytes.decode("utf-8-sig"), newline=None)
@@ -152,14 +140,16 @@ def upload_csv():
             
             df.columns = [c.strip() for c in df.columns]
             
+            # DB処理を with 構文で包み、エラー時も確実にクローズしてDBロックを防ぐ
             with sqlite3.connect(DB_PATH, timeout=30) as conn:
+                # 同じユーザー名・同じ資格・同じモードの既存データを上書き（一度削除）
                 conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ? AND mode = ?", (current_user.id, exam_name, mode))
                 
                 for idx, q in df.iterrows():
                     genre = str(q.get("ジャンル", "一般")).strip()
                     prob = str(q.get("問題文", "")).strip()
-                    if not prob:
-                        continue
+                    if not prob or pd.isna(q.get("問題文")):
+                        continue # 空行や問題文が空の行はスキップ
                     
                     if mode == "1":
                         ans = str(q.get("正解", "")).strip()
@@ -175,8 +165,9 @@ def upload_csv():
                             INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, 正解, 解説, mode)
                             VALUES (?, ?, ?, ?, ?, ?, '2')
                         """, (current_user.id, exam_name, genre, prob, ans, kw, '2'))
+                        
                 conn.commit()
-                
+            
             mode_str = "過去問モード" if mode == "1" else "用語説明モード"
             return jsonify({"message": f"「{exam_name}」を{mode_str}用として正常に登録しました！"})
         except Exception as e:
@@ -296,6 +287,7 @@ def get_final_stats():
         conn.commit()
 
         df_genre = pd.read_sql_query("SELECT ジャンル, SUM(得点) AS s, SUM(満点) AS m, ROUND(SUM(得点)*100.0/SUM(満点), 1) AS rate FROM history WHERE user_id=? AND session_id=? AND mode='1' GROUP BY ジャンル ORDER BY rate ASC", conn, params=(current_user.id, session_id))
+        
     return jsonify({"total_rate": round(total_rate, 1), "total_score": total_score, "total_max": total_max, "genre_stats": df_genre.to_dict(orient='records')})
 
 @app.route('/get_graph')
@@ -307,6 +299,7 @@ def get_graph():
     if df.empty: 
         return jsonify({"error": "No data"})
     
+    # 👈 スレッドセーフ（混線防止）のためオブジェクト指向APIに修正
     fig, ax = plt.subplots(figsize=(6, 4))
     x_indices = range(len(df))
     ax.plot(x_indices, df['accuracy'], marker='o', linestyle='-', linewidth=2)
@@ -322,7 +315,7 @@ def get_graph():
     fig.savefig(img, format='png')
     img.seek(0)
     plot_url = base64.b64encode(img.getvalue()).decode()
-    plt.close(fig)
+    plt.close(fig) # 👈 figオブジェクトを指定して閉じる
     return jsonify({"plot": plot_url})
 
 @app.route('/reset_history', methods=['POST'])
