@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>資格試験対策ボット</title>
+    <title>カスタム資格試験対策ボット</title>
     <style>
         :root { --bg-color: #7494c0; --bot-bubble: #ffffff; --user-bubble: #85e249; }
         body, html { height: 100%; margin: 0; font-family: sans-serif; background: var(--bg-color); display: flex; flex-direction: column; }
@@ -27,12 +27,13 @@
         th, td { border: 1px solid #ddd; padding: 5px; text-align: left; }
         #auth-screen { flex:1; display:flex; align-items:center; justify-content:center; }
         #auth-area { padding: 30px; display: flex; flex-direction: column; gap: 15px; background: white; border-radius: 15px; width: 80%; max-width: 300px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-        .upload-zone { background: #e9ecef; padding: 8px; border-radius: 10px; font-size: 12px; text-align: center; border: 1px dashed #6c757d; }
+        .upload-zone { background: #e9ecef; padding: 10px; border-radius: 10px; font-size: 12px; text-align: center; border: 1px dashed #6c757d; width: 90%; }
+        .tmpl-link { margin: 0 5px; color: #007bff; text-decoration: underline; cursor: pointer; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="header">
-        資格試験対策チャットボット
+        マイ資格試験対策チャットボット
         <button id="logout-btn" onclick="logout()" class="btn-red hidden" style="position:absolute; right:10px; font-size:10px; padding:5px 10px;">ログアウト</button>
     </div>
 
@@ -51,16 +52,23 @@
         <div class="input-area-fixed">
             <div id="upload-area" class="controls hidden">
                 <div class="upload-zone">
-                    自作の問題CSVを選択: <input type="file" id="csv-file" accept=".csv" style="font-size:11px;">
+                    <div style="margin-bottom: 8px;">
+                        【テンプレート】
+                        <span class="tmpl-link" onclick="location.href='/download_template/1'">過去問用</span> | 
+                        <span class="tmpl-link" onclick="location.href='/download_template/2'">用語説明用</span>
+                    </div>
+                    <hr style="border:0; border-top:1px solid #ccc; margin:8px 0;">
+                    問題CSVを選択: <input type="file" id="csv-file" accept=".csv" style="font-size:11px;">
                     <button onclick="uploadCSV()" class="btn-send" style="padding:4px 10px; font-size:11px;">登録</button>
+                    <div style="font-size:10px; color:#555; margin-top:4px;">※ファイル名は「〇〇_過去問.csv」か「〇〇_用語.csv」にしてください</div>
                 </div>
             </div>
 
             <div id="exam-select" class="controls hidden"></div>
             
             <div id="mode-select" class="controls hidden">
-                <button onclick="startApp('1')" class="btn-blue">過去問モード</button>
-                <button onclick="startApp('2')" class="btn-blue">用語説明モード</button>
+                <button onclick="startApp('1')" id="mode1-btn" class="btn-blue hidden">過去問モード</button>
+                <button onclick="startApp('2')" id="mode2-btn" class="btn-blue hidden">用語説明モード</button>
             </div>
             <div id="choice-area" class="controls hidden">
                 <button class="choice-btn" onclick="handleAnswer('ア')">ア</button>
@@ -74,8 +82,7 @@
                 <button id="exit-btn" onclick="backToTop()" class="btn-gray hidden">トップへ戻る</button>
             </div>
             <div id="menu-area" class="controls hidden">
-                <button onclick="startApp('1')" class="btn-blue">過去問モード</button>
-                <button onclick="startApp('2')" class="btn-blue">用語説明モード</button>
+                <button onclick="startApp(mode)" class="btn-blue">もう一度解く</button>
                 <button onclick="showGraph()" class="btn-blue">成績グラフ</button>
                 <button onclick="backToTop()" class="btn-gray">資格を選び直す</button>
             </div>
@@ -146,7 +153,7 @@
                 });
                 selectArea.classList.remove("hidden");
             } else {
-                addMsg("bot", "まだ問題が登録されていません。上の入力欄からオリジナルの問題集CSV（例：ITパスポート.csv など）をアップロードしてください。");
+                addMsg("bot", "まだ問題が登録されていません。上の「過去問用」または「用語説明用」のリンクから空のテンプレートをダウンロードし、編集してアップロードしてください！");
             }
         }
 
@@ -173,8 +180,12 @@
             selectedExam = exam;
             addMsg("user", `${exam} を勉強します`);
             hideAllControls();
-            addMsg("bot", `「${exam}」ですね。学習モードを選んでください。`);
+            addMsg("bot", `「${exam}」ですね。この資格で利用可能な学習モードを選んでください。`);
+            
+            // 両方のモードボタンを一回隠してから、両方とも表示させる（サーバー側で対応する問題がある方を選んでもらう）
             document.getElementById("mode-select").classList.remove("hidden");
+            document.getElementById("mode1-btn").classList.remove("hidden");
+            document.getElementById("mode2-btn").classList.remove("hidden");
         }
 
         function sendMessage() {
@@ -186,11 +197,11 @@
 
         function startApp(m) {
             mode = m; qCount = 0; sessionId = Date.now().toString(); hideAllControls();
-            addMsg("bot", `<b>--- ${selectedExam} の モード${m} を開始 ---</b>`);
+            const modeName = m === "1" ? "過去問モード" : "用語説明モード";
+            addMsg("bot", `<b>--- ${selectedExam} の ${modeName} を開始 ---</b>`);
             loadQuestion();
         }
 
-        // 【修正箇所】エラーを検知してストップしないように制御を追加
         async function loadQuestion() {
             qCount++; hideAllControls();
             const res = await fetch('/get_question', { 
@@ -200,10 +211,9 @@
             });
             const data = await res.json();
             
-            // サーバー側でデータが見つからない、またはundefinedが返ってきた場合の対策
             if (!res.ok || data.error || !data.question) {
-                addMsg("bot", `<span style="color:red">⚠️「${selectedExam}」のモード${mode}に対応する問題データが見つかりません。CSVファイルの中に正しい形式でデータが入っているか確認するか、別のCSVを再度アップロードしてください。</span>`);
-                backToTop(); // 操作不能を避けるために自動でトップ（選択・アップロード画面）へ戻す
+                addMsg("bot", `<span style="color:red">⚠️「${selectedExam}」には、選択したモードの問題データがまだ登録されていません。ファイル名に「_過去問」または「_用語」が含まれているか再度確認してください。</span>`);
+                backToTop();
                 return;
             }
 
@@ -264,6 +274,9 @@
 
         function hideAllControls() {
             ["upload-area", "exam-select", "mode-select", "choice-area", "next-area", "menu-area", "graph-menu"].forEach(id => {
+                const target = document.getElementById(id); if(target) target.classList.add("hidden");
+            });
+            ["mode1-btn", "mode2-btn"].forEach(id => {
                 const target = document.getElementById(id); if(target) target.classList.add("hidden");
             });
         }
