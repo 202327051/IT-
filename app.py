@@ -47,12 +47,93 @@ def normalize_choice(text):
     mapping = {"a": "ア", "ａ": "ア", "i": "イ", "ｉ": "イ", "u": "ウ", "ｕ": "ウ", "e": "エ", "ｅ": "エ"}
     return mapping.get(text, text)
 
-# 【修正1】DB初期化に timeout=30 を追加
-conn = sqlite3.connect(DB_PATH, timeout=30)
-conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)")
-conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
-conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp TEXT, accuracy REAL)")
-conn.close()
+# データベース初期化（完全なプライベートハコ型として設計）
+def init_database():
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)")
+    conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
+    conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp TEXT, accuracy REAL)")
+    
+    # 問題管理テーブル（すべての問題が user_id に紐づき、完全に個人用として隔離されます）
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        exam_type TEXT,
+        ジャンル TEXT,
+        問題文 TEXT,
+        ア TEXT,
+        イ TEXT,
+        ウ TEXT,
+        エ TEXT,
+        正解 TEXT,
+        解説 TEXT,
+        mode TEXT
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+init_database()
+
+# -----------------------------
+# ログインユーザーが登録した資格一覧の取得
+# -----------------------------
+@app.route('/get_exams', methods=['GET'])
+@login_required
+def get_exams():
+    db = sqlite3.connect(DB_PATH, timeout=30)
+    # 自分がアップロードした資格名の一覧（重複なし）を取得
+    exams = db.execute("SELECT DISTINCT exam_type FROM questions WHERE user_id = ?", (current_user.id,)).fetchall()
+    db.close()
+    exam_list = [e[0] for e in exams]
+    return jsonify({"exams": exam_list})
+
+# -----------------------------
+# CSVファイル アップロード機能（個人用登録）
+# -----------------------------
+@app.route('/upload_csv', methods=['POST'])
+@login_required
+def upload_csv():
+    if 'file' not in request.files:
+        return jsonify({"error": "ファイルがありません"}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "ファイル名が空です"}), 400
+
+    if file and file.filename.endswith('.csv'):
+        exam_name = os.path.splitext(file.filename)[0] # ファイル名を資格名として扱う
+        
+        try:
+            # Shift-JIS / UTF-8 両方のCSVに対応できるようデコードしてストリーム化
+            stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
+            df = pd.read_csv(stream)
+            
+            conn = sqlite3.connect(DB_PATH, timeout=30)
+            # 同じユーザー名で、同じ資格名のデータがすでにあれば上書き（一度削除）
+            conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ?", (current_user.id, exam_name))
+            
+            for _, q in df.iterrows():
+                # 過去問モード(1)か用語説明モード(2)かをカラム構成から自動判別
+                mode = "1" if "ア" in df.columns else "2"
+                if mode == "1":
+                    conn.execute("""
+                        INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, ア, イ, ウ, エ, 正解, 解説, mode)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1')
+                    """, (current_user.id, exam_name, q["ジャンル"], q["問題文"], q["ア"], q["イ"], q["ウ"], q["エ"], q["正解"], q["解説"]))
+                else:
+                    conn.execute("""
+                        INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, 正解, 解説, mode)
+                        VALUES (?, ?, ?, ?, ?, ?, '2')
+                    """, (current_user.id, exam_name, q["ジャンル"], q["問題文"], q["模範解答"], q["必須キーワード"], '2'))
+            conn.commit()
+            conn.close()
+            return jsonify({"message": f"「{exam_name}」の問題集を自分専用に登録しました！"})
+        except Exception as e:
+            return jsonify({"error": f"CSVの読み込みエラー: {str(e)}"}), 500
+
+    return jsonify({"error": "CSVファイルをアップロードしてください"}), 400
 
 # -----------------------------
 # 認証ルーティング
@@ -63,7 +144,6 @@ def register():
     username = data.get('username')
     hashed_password = generate_password_hash(data.get('password'), method='pbkdf2:sha256')
     try:
-        # 【修正2】新規登録に timeout=30 を追加
         db = sqlite3.connect(DB_PATH, timeout=30)
         db.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_password))
         db.commit()
@@ -75,7 +155,6 @@ def register():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
-    # 【修正3】ログインに timeout=30 を追加
     db = sqlite3.connect(DB_PATH, timeout=30)
     user = db.execute("SELECT id, password FROM users WHERE username = ?", (data.get('username'),)).fetchone()
     db.close()
@@ -99,24 +178,33 @@ def index():
 @app.route('/get_question', methods=['POST'])
 @login_required
 def get_question():
-    mode = str(request.json.get("mode"))
-    file_path = 'ITパスポート.csv' if mode == '1' else '用語説明.csv'
-    df = pd.read_csv(file_path, encoding="utf-8")
-    q = df.sample(1).iloc[0]
+    data = request.json
+    mode = str(data.get("mode"))
+    selected_exam = data.get("exam_type")
     
-    question_text = q["問題文"]
+    if not selected_exam:
+        return jsonify({"error": "資格が選択されていません"}), 400
+
+    db = sqlite3.connect(DB_PATH, timeout=30)
+    # 完全プライベート化：ログイン中の本人のデータ（user_id = current_user.id）からのみ出題
+    q = db.execute("""
+        SELECT id, ジャンル, 問題文, ア, イ, ウ, エ, exam_type 
+        FROM questions 
+        WHERE user_id = ? AND mode = ? AND exam_type = ?
+        ORDER BY RANDOM() LIMIT 1
+    """, (current_user.id, mode, selected_exam)).fetchone()
+    db.close()
+    
+    if not q:
+        return jsonify({"error": f"問題データが見つかりません"}), 404
+        
+    question_text = q[2]
     if mode == "2":
         question_text = f"「{question_text}」について説明してください。"
 
-    res = {"id": int(q["id"]), "genre": q["ジャンル"], "question": str(question_text)}
+    res = {"id": q[0], "genre": f"{q[7]} | {q[1]}", "question": str(question_text)}
     if mode == "1":
-        # 4つのカラムから選択肢を取得して、自動的に「ア：〜」の形に整形する
-        res["choices"] = [
-            f"ア：{q['ア']}",
-            f"イ：{q['イ']}",
-            f"ウ：{q['ウ']}",
-            f"エ：{q['エ']}"
-        ]
+        res["choices"] = [f"ア：{q[3]}", f"イ：{q[4]}", f"ウ：{q[5]}", f"エ：{q[6]}"]
     return jsonify(res)
 
 @app.route('/check_answer', methods=['POST'])
@@ -125,27 +213,26 @@ def check_answer():
     data = request.json
     mode, q_id, user_ans, session_id = str(data.get("mode")), data.get("id"), data.get("answer"), data.get("session_id")
     
-    file_path = 'ITパスポート.csv' if mode == '1' else '用語説明.csv'
-    df = pd.read_csv(file_path, encoding="utf-8")
-    q = df[df['id'] == q_id].iloc[0]
+    db = sqlite3.connect(DB_PATH, timeout=30)
+    q = db.execute("SELECT ジャンル, 正解, 解説 FROM questions WHERE id = ?", (q_id,)).fetchone()
+    db.close()
 
     res = {"mode": mode}
     if mode == "1":
-        is_correct = normalize_choice(user_ans) == normalize_choice(q["正解"])
+        is_correct = normalize_choice(user_ans) == normalize_choice(q[1])
         current_score = 1 if is_correct else 0
-        res.update({"score": current_score, "max": 1, "correct": str(q["正解"]), "explanation": str(q["解説"])})
+        res.update({"score": current_score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        keywords = [k.strip() for k in str(q["必須キーワード"]).replace("、", ",").split(",")]
+        keywords = [k.strip() for k in str(q[2]).replace("、", ",").split(",")]
         user_norm = normalize_text(user_ans)
         hit = [k for k in keywords if normalize_text(k) in user_norm]
         miss = [k for k in keywords if normalize_text(k) not in user_norm]
-        current_score, max_score = len(hit), int(q["満点"])
-        res.update({"score": current_score, "max": max_score, "correct": str(q["模範解答"]), "keywords": keywords, "miss": miss})
+        current_score, max_score = len(hit), len(keywords)
+        res.update({"score": current_score, "max": max_score, "correct": str(q[1]), "keywords": keywords, "miss": miss})
 
-    # 【修正4】答え合わせ時のデータ挿入に timeout=30 を追加
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute("INSERT INTO history (user_id, 問題ID, ジャンル, 回答, 得点, 満点, mode, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                 (current_user.id, int(q["id"]), q["ジャンル"], str(user_ans), current_score, res["max"], mode, session_id))
+                 (current_user.id, q_id, q[0], str(user_ans), current_score, res["max"], mode, session_id))
     conn.commit()
     conn.close()
     return jsonify(res)
@@ -154,7 +241,6 @@ def check_answer():
 @login_required
 def get_final_stats():
     session_id = request.json.get("session_id")
-    # 【修正5】最終成績の集計・挿入に timeout=30 を追加
     conn = sqlite3.connect(DB_PATH, timeout=30)
     row = conn.execute("SELECT SUM(得点), SUM(満点) FROM history WHERE user_id = ? AND session_id = ? AND mode = '1'", (current_user.id, session_id)).fetchone()
     total_score, total_max = row[0] or 0, row[1] or 0
@@ -171,7 +257,6 @@ def get_final_stats():
 @app.route('/get_graph')
 @login_required
 def get_graph():
-    # 【安全対策】グラフ描画の読み込み接続にも timeout=30 を追加
     conn = sqlite3.connect(DB_PATH, timeout=30)
     df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=? ORDER BY id ASC", conn, params=(current_user.id,))
     conn.close()
@@ -199,7 +284,6 @@ def get_graph():
 @app.route('/reset_history', methods=['POST'])
 @login_required
 def reset_history():
-    # 【安全対策】データリセット処理に timeout=30 を追加
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute("DELETE FROM history WHERE user_id = ?", (current_user.id,))
     conn.execute("DELETE FROM session_stats WHERE user_id = ?", (current_user.id,))
@@ -208,5 +292,4 @@ def reset_history():
     return jsonify({"message": "Reset successful"})
 
 if __name__ == '__main__':
-    # 外部からのアクセス用に host='0.0.0.0' に固定
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
