@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ITパスポート学習ボット</title>
+    <title>資格試験対策ボット</title>
     <style>
         :root { --bg-color: #7494c0; --bot-bubble: #ffffff; --user-bubble: #85e249; }
         body, html { height: 100%; margin: 0; font-family: sans-serif; background: var(--bg-color); display: flex; flex-direction: column; }
@@ -31,7 +31,7 @@
 </head>
 <body>
     <div class="header">
-        ITパスポート学習チャット
+        資格試験対策用
         <button id="logout-btn" onclick="logout()" class="btn-red hidden" style="position:absolute; right:10px; font-size:10px; padding:5px 10px;">ログアウト</button>
     </div>
 
@@ -115,7 +115,8 @@
 
         function initChat() {
             isWaitingForAnswer = false;
-            addMsg("bot", "ITパスポート学習ボットです。まずは下のボタンからモードを選んでください。");
+            // 【修正】挨拶テキストも汎用的に変更
+            addMsg("bot", "資格試験対策ボットです。まずは下のボタンからモードを選んでください。");
         }
 
         function sendMessage() {
@@ -200,7 +201,6 @@
         async function confirmReset() {
             if(confirm("全ての履歴をリセットしてもよろしいですか？")) {
                 await fetch('/reset_history', {method: 'POST'});
-                // 修正：リロードせず、チャットをクリアしてトップに戻る
                 document.getElementById("chat-box").innerHTML = "";
                 backToTop();
                 addMsg("bot", "履歴をリセットしました。");
