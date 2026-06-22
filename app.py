@@ -25,10 +25,8 @@ login_manager.init_app(app)
 
 DB_PATH = "history.db"
 
-# サーバー側で管理者が用意するサンプルCSVの格納フォルダ
+# サーバー側（GitHubなど）で管理者が用意した本物のCSVが置かれているフォルダ
 CSV_TEMPLATE_DIR = os.path.join(app.root_path, 'templates', 'csv')
-if not os.path.exists(CSV_TEMPLATE_DIR):
-    os.makedirs(CSV_TEMPLATE_DIR)
 
 class User(UserMixin):
     def __init__(self, id):
@@ -80,19 +78,20 @@ def init_database():
 init_database()
 
 # -----------------------------
-# 【完全修正】指定されたサンプルCSVを、そのままの名前と中身でダウンロードさせる
+# 【修正】置いてあるCSVファイルをそのままの名前・中身でダウンロードさせる
 # -----------------------------
 @app.route('/download_template/<filename>', methods=['GET'])
 @login_required
 def download_template(filename):
+    # 安全対策としてファイル名部分だけを抽出
     secure_filename = os.path.basename(filename)
     file_path = os.path.join(CSV_TEMPLATE_DIR, secure_filename)
     
-    # サーバー側にファイルが存在するかチェック（なければ404エラーを返す）
+    # サーバー側にファイルが存在しなければ404エラーを返す（勝手に作らない）
     if not os.path.exists(file_path):
-        return jsonify({"error": f"サーバー側にサンプルファイル「{secure_filename}」が配置されていません。GitHubの templates/csv フォルダの中にファイルをアップロードしてください。"}), 404
+        return jsonify({"error": f"サンプルファイル「{secure_filename}」が templates/csv/ フォルダ内に見つかりません。"}), 404
 
-    # ファイル名そのままでダウンロードさせる
+    # ファイル名も中身もそのままでユーザーにダウンロードさせる
     return send_from_directory(CSV_TEMPLATE_DIR, secure_filename, as_attachment=True)
 
 # -----------------------------
