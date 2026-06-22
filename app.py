@@ -47,14 +47,13 @@ def normalize_choice(text):
     mapping = {"a": "ア", "ａ": "ア", "i": "イ", "ｉ": "イ", "u": "ウ", "ｕ": "ウ", "e": "エ", "ｅ": "エ"}
     return mapping.get(text, text)
 
-# データベース初期化（完全なプライベートハコ型として設計）
 def init_database():
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp TEXT, accuracy REAL)")
     
-    # 問題管理テーブル（すべての問題が user_id に紐づき、完全に個人用として隔離されます）
+    # 共通テーブル構造（解説カラム[解説]に必須キーワードを格納します）
     conn.execute("""
     CREATE TABLE IF NOT EXISTS questions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,14 +82,13 @@ init_database()
 @login_required
 def get_exams():
     db = sqlite3.connect(DB_PATH, timeout=30)
-    # 自分がアップロードした資格名の一覧（重複なし）を取得
     exams = db.execute("SELECT DISTINCT exam_type FROM questions WHERE user_id = ?", (current_user.id,)).fetchall()
     db.close()
     exam_list = [e[0] for e in exams]
     return jsonify({"exams": exam_list})
 
 # -----------------------------
-# CSVファイル アップロード機能（個人用登録）
+# CSVファイル アップロード機能（提出されたCSV形式に完全特化）
 # -----------------------------
 @app.route('/upload_csv', methods=['POST'])
 @login_required
@@ -103,35 +101,54 @@ def upload_csv():
         return jsonify({"error": "ファイル名が空です"}), 400
 
     if file and file.filename.endswith('.csv'):
-        exam_name = os.path.splitext(file.filename)[0] # ファイル名を資格名として扱う
+        exam_name = os.path.splitext(file.filename)[0]
         
         try:
-            # Shift-JIS / UTF-8 両方のCSVに対応できるようデコードしてストリーム化
-            stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
-            df = pd.read_csv(stream)
+            # Excel等のShift-JIS、UTF-8両対応
+            try:
+                stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
+                df = pd.read_csv(stream)
+            except:
+                file.stream.seek(0)
+                stream = io.StringIO(file.stream.read().decode("shift-jis"), newline=None)
+                df = pd.read_csv(stream)
+            
+            # 列名の前後の空白を削除
+            df.columns = [c.strip() for c in df.columns]
+            
+            # 判定：選択肢「ア」があればモード1、なければ一律モード2（用語説明）
+            mode = "1" if "ア" in df.columns else "2"
             
             conn = sqlite3.connect(DB_PATH, timeout=30)
-            # 同じユーザー名で、同じ資格名のデータがすでにあれば上書き（一度削除）
-            conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ?", (current_user.id, exam_name))
+            # 既存の同一資格・同一モードのデータを削除して上書き
+            conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ? AND mode = ?", (current_user.id, exam_name, mode))
             
-            for _, q in df.iterrows():
-                # 過去問モード(1)か用語説明モード(2)かをカラム構成から自動判別
-                mode = "1" if "ア" in df.columns else "2"
+            for idx, q in df.iterrows():
+                genre = str(q.get("ジャンル", "一般"))
+                prob = str(q.get("問題文", ""))
+                
                 if mode == "1":
+                    ans = str(q.get("正解", q.get("解答", "")))
+                    exp = str(q.get("解説", ""))
                     conn.execute("""
                         INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, ア, イ, ウ, エ, 正解, 解説, mode)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1')
-                    """, (current_user.id, exam_name, q["ジャンル"], q["問題文"], q["ア"], q["イ"], q["ウ"], q["エ"], q["正解"], q["解説"]))
+                    """, (current_user.id, exam_name, genre, prob, str(q.get("ア","")), str(q.get("イ","")), str(q.get("ウ","")), str(q.get("エ","")), ans, exp))
                 else:
+                    # 遠山さんのCSVカラム名（模範解答、必須キーワード）に完全対応
+                    ans = str(q.get("模範解答", ""))
+                    kw = str(q.get("必須キーワード", ""))
+                    
                     conn.execute("""
                         INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, 正解, 解説, mode)
                         VALUES (?, ?, ?, ?, ?, ?, '2')
-                    """, (current_user.id, exam_name, q["ジャンル"], q["問題文"], q["模範解答"], q["必須キーワード"], '2'))
+                    """, (current_user.id, exam_name, genre, prob, ans, kw, '2'))
+                    
             conn.commit()
             conn.close()
-            return jsonify({"message": f"「{exam_name}」の問題集を自分専用に登録しました！"})
+            return jsonify({"message": f"「{exam_name}」を用語説明モード(モード2)として正常に登録しました！"})
         except Exception as e:
-            return jsonify({"error": f"CSVの読み込みエラー: {str(e)}"}), 500
+            return jsonify({"error": f"CSVの解析に失敗しました: {str(e)} \nファイル形式を確認してください。"}), 500
 
     return jsonify({"error": "CSVファイルをアップロードしてください"}), 400
 
@@ -186,7 +203,6 @@ def get_question():
         return jsonify({"error": "資格が選択されていません"}), 400
 
     db = sqlite3.connect(DB_PATH, timeout=30)
-    # 完全プライベート化：ログイン中の本人のデータ（user_id = current_user.id）からのみ出題
     q = db.execute("""
         SELECT id, ジャンル, 問題文, ア, イ, ウ, エ, exam_type 
         FROM questions 
@@ -223,7 +239,10 @@ def check_answer():
         current_score = 1 if is_correct else 0
         res.update({"score": current_score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        keywords = [k.strip() for k in str(q[2]).replace("、", ",").split(",")]
+        # クォーテーションや全角読点をクリアしてキーワードをリスト化
+        raw_kw = str(q[2]).replace('"', '').replace('「', '').replace('」', '').replace("、", ",")
+        keywords = [k.strip() for k in raw_kw.split(",") if k.strip()]
+        
         user_norm = normalize_text(user_ans)
         hit = [k for k in keywords if normalize_text(k) in user_norm]
         miss = [k for k in keywords if normalize_text(k) not in user_norm]
