@@ -81,9 +81,9 @@ def download_template(mode_type):
     directory = os.path.join(app.root_path, 'templates', 'csv')
     
     if mode_type == "1":
-        filename = "○○_過去問.csv"  # 👈 実際のファイル名（例: ITパスポート_過去問.csv など）に合わせて修正してください
+        filename = "○○_過去問.xlsx"
     else:
-        filename = "○○_用語.csv"    # 👈 実際のファイル名（例: ITパスポート_用語.csv など）に合わせて修正してください
+        filename = "○○_用語.xlsx"
         
     return send_from_directory(directory, filename, as_attachment=True)
 
@@ -154,7 +154,7 @@ def upload_csv():
                         ans = str(q.get("模範解答", "")).strip()
                         kw = str(q.get("必須キーワード", "")).strip()
                         conn.execute("""
-                            INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, 正解, 解説, mode)
+                            INSERT INTO questions (user_id, exam_type, ジャンル, 満点, 問題文, 必須キーワード, 正解, 模範解答, mode)
                             VALUES (?, ?, ?, ?, ?, ?, '2')
                         """, (current_user.id, exam_name, genre, prob, ans, kw, '2'))
                 conn.commit()
