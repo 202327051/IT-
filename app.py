@@ -154,9 +154,9 @@ def upload_csv():
                         ans = str(q.get("模範解答", "")).strip()
                         kw = str(q.get("必須キーワード", "")).strip()
                         conn.execute("""
-                            INSERT INTO questions (user_id, exam_type, ジャンル, 満点, 問題文, 必須キーワード, 正解, 模範解答, mode)
-                            VALUES (?, ?, ?, ?, ?, ?, '2')
-                        """, (current_user.id, exam_name, genre, prob, ans, kw, '2'))
+                            INSERT INTO questions (user_id, exam_type, ジャンル, 満点, 問題文, 必須キーワード, 模範解答, mode)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, '2')
+                        """, (current_user.id, exam_name, genre, score, prob, kw, ans,  '2'))
                 conn.commit()
                 
             mode_str = "過去問モード" if mode == "1" else "用語説明モード"
