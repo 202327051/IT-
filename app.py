@@ -51,6 +51,7 @@ def init_database():
         conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp TEXT, accuracy REAL)")
         
+        # 満点, 必須キーワード, 模範解答カラムを安全に追加
         conn.execute("""
         CREATE TABLE IF NOT EXISTS questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,6 +65,9 @@ def init_database():
             エ TEXT,
             正解 TEXT,
             解説 TEXT,
+            満点 INTEGER,
+            必須キーワード TEXT,
+            模範解答 TEXT,
             mode TEXT
         )
         """)
@@ -72,19 +76,16 @@ def init_database():
 init_database()
 
 # -----------------------------
-# 【修正】方法2：サーバー内の実際のCSVテンプレートをダウンロードさせる
+# サーバー内の実際のCSVテンプレートをダウンロードさせる
 # -----------------------------
 @app.route('/download_template/<mode_type>', methods=['GET'])
 @login_required
 def download_template(mode_type):
-    # CSVが置いてある絶対パスを指定（templates/csv）
     directory = os.path.join(app.root_path, 'templates', 'csv')
-    
     if mode_type == "1":
         filename = "○○_過去問.xlsx"
     else:
         filename = "○○_用語.xlsx"
-        
     return send_from_directory(directory, filename, as_attachment=True)
 
 # -----------------------------
@@ -151,18 +152,26 @@ def upload_csv():
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1')
                         """, (current_user.id, exam_name, genre, prob, str(q.get("ア","")), str(q.get("イ","")), str(q.get("ウ","")), str(q.get("エ","")), ans, exp))
                     else:
+                        # 用語説明モード：ご提示いただいたカラム構成で安全に取得
                         ans = str(q.get("模範解答", "")).strip()
                         kw = str(q.get("必須キーワード", "")).strip()
+                        
+                        # 満点を数値として取得（不備があれば5点にする安全対策）
+                        try:
+                            score = int(q.get("満点", 5))
+                        except (ValueError, TypeError):
+                            score = 5
+
                         conn.execute("""
                             INSERT INTO questions (user_id, exam_type, ジャンル, 満点, 問題文, 必須キーワード, 模範解答, mode)
                             VALUES (?, ?, ?, ?, ?, ?, ?, '2')
-                        """, (current_user.id, exam_name, genre, score, prob, kw, ans,  '2'))
+                        """, (current_user.id, exam_name, genre, score, prob, kw, ans))
                 conn.commit()
                 
             mode_str = "過去問モード" if mode == "1" else "用語説明モード"
             return jsonify({"message": f"「{exam_name}」を{mode_str}用として正常に登録しました！"})
         except Exception as e:
-            return jsonify({"error": f"CSVの解析に失敗しました: {str(e)}\\nテンプレートCSVをダウンロードして、形式を合わせてください。"}), 500
+            return jsonify({"error": f"CSVの解析に失敗しました: {str(e)}"}), 500
 
     return jsonify({"error": "CSVファイルをアップロードしてください"}), 400
 
@@ -241,7 +250,8 @@ def check_answer():
     mode, q_id, user_ans, session_id = str(data.get("mode")), data.get("id"), data.get("answer"), data.get("session_id")
     
     with sqlite3.connect(DB_PATH, timeout=30) as db:
-        q = db.execute("SELECT ジャンル, 正解, 解説 FROM questions WHERE id = ?", (q_id,)).fetchone()
+        # mode=2 のためにカラム（正解/模範解答, 解説/必須キーワード, 満点）を的確に取得
+        q = db.execute("SELECT ジャンル, 正解, 解説, 模範解答, 必須キーワード, 満点 FROM questions WHERE id = ?", (q_id,)).fetchone()
 
     res = {"mode": mode}
     if mode == "1":
@@ -249,14 +259,26 @@ def check_answer():
         current_score = 1 if is_correct else 0
         res.update({"score": current_score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        raw_kw = str(q[2]).replace('"', '').replace('「', '').replace('」', '').replace("、", ",")
+        # 用語説明モードの採点：保存された「模範解答」「必須キーワード」「満点」を使用
+        model_answer = str(q[3])
+        raw_kw = str(q[4]).replace('"', '').replace('「', '').replace('」', '').replace("、", ",")
         keywords = [k.strip() for k in raw_kw.split(",") if k.strip()]
+        max_score = q[5] if q[5] is not None else len(keywords)
         
         user_norm = normalize_text(user_ans)
         hit = [k for k in keywords if normalize_text(k) in user_norm]
         miss = [k for k in keywords if normalize_text(k) not in user_norm]
-        current_score, max_score = len(hit), len(keywords)
-        res.update({"score": current_score, "max": max_score, "correct": str(q[1]), "keywords": keywords, "miss": miss})
+        
+        # 獲得点数の計算（キーワードがヒットした割合に応じてExcel上の満点を按分）
+        if len(keywords) > 0:
+            current_score = round((len(hit) / len(keywords)) * max_score, 1)
+            # きれいに整数にできる場合は整数にする
+            if current_score.is_integer():
+                current_score = int(current_score)
+        else:
+            current_score = max_score
+
+        res.update({"score": current_score, "max": max_score, "correct": model_answer, "keywords": keywords, "miss": miss})
 
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
         conn.execute("INSERT INTO history (user_id, 問題ID, ジャンル, 回答, 得点, 満点, mode, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -289,7 +311,6 @@ def get_graph():
     if df.empty: 
         return jsonify({"error": "No data"})
     
-    # スレッドセーフなオブジェクト指向APIでグラフ描画
     fig, ax = plt.subplots(figsize=(6, 4))
     x_indices = range(len(df))
     ax.plot(x_indices, df['accuracy'], marker='o', linestyle='-', linewidth=2)
