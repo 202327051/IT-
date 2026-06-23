@@ -51,7 +51,7 @@ def init_database():
         conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp TEXT, accuracy REAL)")
         
-        # 満点カラムを廃止し、スッキリした構造に
+        # 満点カラムを廃止し、必須キーワードから自動計算するスッキリした構造
         conn.execute("""
         CREATE TABLE IF NOT EXISTS questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,7 +151,6 @@ def upload_csv():
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1')
                         """, (current_user.id, exam_name, genre, prob, str(q.get("ア","")), str(q.get("イ","")), str(q.get("ウ","")), str(q.get("エ","")), ans, exp))
                     else:
-                        # 満点カラムを無視し、必須キーワードと模範解答だけを保存
                         ans = str(q.get("模範解答", "")).strip()
                         kw = str(q.get("必須キーワード", "")).strip()
 
@@ -200,7 +199,7 @@ def logout():
     return jsonify({"message": "Logged out"})
 
 # -----------------------------
-# 学習機能ルーティング
+# 学習機能ルーティング（出題重複防止ロジック込み）
 # -----------------------------
 @app.route('/')
 def index():
@@ -212,17 +211,31 @@ def get_question():
     data = request.json
     mode = str(data.get("mode"))
     selected_exam = data.get("exam_type")
+    session_id = data.get("session_id") # 現在セッションの回答履歴を参照するために取得
     
     if not selected_exam:
         return jsonify({"error": "資格が選択されていません"}), 400
 
     with sqlite3.connect(DB_PATH, timeout=30) as db:
+        # 現在のセッションですでに解答した問題ID（問題ID）を除外して、完全に未回答の問題からランダム抽出
         q = db.execute("""
             SELECT id, ジャンル, 問題文, ア, イ, ウ, エ, exam_type 
             FROM questions 
             WHERE user_id = ? AND mode = ? AND exam_type = ?
+              AND id NOT IN (
+                  SELECT 問題ID FROM history WHERE user_id = ? AND session_id = ? AND mode = ?
+              )
             ORDER BY RANDOM() LIMIT 1
-        """, (current_user.id, mode, selected_exam)).fetchone()
+        """, (current_user.id, mode, selected_exam, current_user.id, session_id, mode)).fetchone()
+        
+        # 1周すべて解き終わった（未回答問題がない）場合は、自動的に履歴ロックを解除して全問題からランダム抽出
+        if not q:
+            q = db.execute("""
+                SELECT id, ジャンル, 問題文, ア, イ, ウ, エ, exam_type 
+                FROM questions 
+                WHERE user_id = ? AND mode = ? AND exam_type = ?
+                ORDER BY RANDOM() LIMIT 1
+            """, (current_user.id, mode, selected_exam)).fetchone()
     
     if not q:
         return jsonify({"error": f"問題データが見つかりません"}), 404
@@ -252,10 +265,10 @@ def check_answer():
         res.update({"score": current_score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
         model_answer = str(q[3])
-        raw_kw = str(q[4]).replace('"', '').replace('「', '').replace('術', ' ').replace('」', '').replace("、", ",")
+        raw_kw = str(q[4]).replace('"', '').replace('「', '').replace('术', ' ').replace('」', '').replace("、", ",")
         keywords = [k.strip() for k in raw_kw.split(",") if k.strip()]
         
-        # ★ここが重要：プログラムが「キーワードの総数」をそのまま満点（MAX値）にする
+        # 必須キーワードの総数を自動的に満点（MAX値）にする
         max_score = len(keywords) if len(keywords) > 0 else 1
         
         user_norm = normalize_text(user_ans)
