@@ -94,6 +94,7 @@
     </div>
     <script>
         let mode = "", qId = null, qCount = 0, isWaitingForAnswer = false, sessionId = "", selectedExam = "";
+
         async function auth(type) {
             const u = document.getElementById("username").value;
             const p = document.getElementById("password").value;
@@ -111,7 +112,10 @@
                 document.getElementById("logout-btn").classList.remove("hidden");
                 initChat();
             } else { alert(data.error); }
+        }
+
         async function logout() { await fetch('/logout'); location.reload(); }
+
         function addMsg(sender, text) {
             const box = document.getElementById("chat-box");
             const div = document.createElement("div");
@@ -119,6 +123,8 @@
             div.innerHTML = text;
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
+        }
+
         async function initChat() {
             isWaitingForAnswer = false;
             hideAllControls();
@@ -141,6 +147,7 @@
                 addMsg("bot", "まだ問題が登録されていません。上の「過去問用」または「用語説明用」のリンクから空のテンプレートをダウンロードし、編集してアップロードしてください！");
             }
         }
+
         async function uploadCSV() {
             const fileInput = document.getElementById("csv-file");
             if (fileInput.files.length === 0) return alert("ファイルを選択してください");
@@ -156,27 +163,31 @@
                 alert(data.error);
             }
         }
+
         function selectExamMode(exam) {
             selectedExam = exam;
             addMsg("user", `${exam} を勉強します`);
             hideAllControls();
             addMsg("bot", `「${exam}」ですね。この資格で利用可能な学習モードを選んでください。`);
-            // 両方のモードボタンを一回隠してから、両方とも表示させる（サーバー側で対応する問題がある方を選んでもらう）
             document.getElementById("mode-select").classList.remove("hidden");
             document.getElementById("mode1-btn").classList.remove("hidden");
             document.getElementById("mode2-btn").classList.remove("hidden");
+        }
+
         function sendMessage() {
             const el = document.getElementById("user-input");
             const val = el.value.trim();
             if(!val || !isWaitingForAnswer) return;
             handleAnswer(val); el.value = "";
         }
+
         function startApp(m) {
             mode = m; qCount = 0; sessionId = Date.now().toString(); hideAllControls();
             const modeName = m === "1" ? "過去問モード" : "用語説明モード";
             addMsg("bot", `<b>--- ${selectedExam} の ${modeName} を開始 ---</b>`);
             loadQuestion();
         }
+
         async function loadQuestion() {
             qCount++; hideAllControls();
             const res = await fetch('/get_question', { 
@@ -199,6 +210,7 @@
             addMsg("bot", text);
             document.getElementById("user-input").focus();
         }
+
         async function handleAnswer(val) {
             isWaitingForAnswer = false; addMsg("user", val); hideAllControls();
             const res = await fetch('/check_answer', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: mode, id: qId, answer: val, session_id: sessionId}) });
@@ -217,6 +229,8 @@
             }
             addMsg("bot", fb.replace(/\n/g, "<br>"));
             document.getElementById("next-area").classList.remove("hidden");
+        }
+
         async function finishApp() {
             hideAllControls();
             const res = await fetch('/get_final_stats', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({session_id: sessionId}) });
@@ -226,6 +240,7 @@
             addMsg("bot", html + "</table><br>次はどうしますか？");
             document.getElementById("menu-area").classList.remove("hidden");
         }
+
         async function showGraph() {
             hideAllControls();
             const res = await fetch('/get_graph');
@@ -234,10 +249,12 @@
             addMsg("bot", `<b>成績推移グラフ</b><br><img src="data:image/png;base64,${data.plot}" style="width:100%; border-radius:10px;">`);
             document.getElementById("graph-menu").classList.remove("hidden");
         }
+
         function backToTop() {
             hideAllControls();
             initChat();
         }
+
         function hideAllControls() {
             ["upload-area", "exam-select", "mode-select", "choice-area", "next-area", "menu-area", "graph-menu"].forEach(id => {
                 const target = document.getElementById(id); if(target) target.classList.add("hidden");
@@ -246,6 +263,7 @@
                 const target = document.getElementById(id); if(target) target.classList.add("hidden");
             });
         }
+
         async function confirmReset() {
             if(confirm("全ての履歴をリセットしてもよろしいですか？")) {
                 await fetch('/reset_history', {method: 'POST'});
