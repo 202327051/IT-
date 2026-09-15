@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory, send_file
+from flask import Flask, request, jsonify, render_template, Response, send_file
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -86,12 +86,24 @@ init_database()
 def index():
     return render_template('index.html')
 
+# 空の入力用テンプレートCSV動的生成（UTF-8 BOM付きでExcel文字化け防止）
 @app.route('/download_template/<mode_type>', methods=['GET'])
 @login_required
 def download_template(mode_type):
-    directory = os.path.join(app.root_path, 'CSV', 'official')
-    filename = "ITパスポート_選択式.csv" if mode_type == "1" else ("ITパスポート_記述式.csv" if mode_type == "2" else "○○_用語.csv")
-    return send_from_directory(directory, filename, as_attachment=True)
+    if mode_type == "1":
+        headers = ["ジャンル", "問題文", "ア", "イ", "ウ", "エ", "正解", "解説"]
+        filename = "テンプレート_選択式.csv"
+    else:
+        headers = ["ジャンル", "問題文", "必須キーワード", "模範解答"]
+        filename = "テンプレート_記述式.csv"
+    
+    csv_content = "\ufeff" + ",".join(headers) + "\n"
+    
+    return Response(
+        csv_content,
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-disposition": f"attachment; filename={filename}"}
+    )
 
 @app.route('/get_exams', methods=['GET'])
 @login_required
@@ -115,9 +127,8 @@ def upload_csv():
     elif "_記述式" in raw_filename or "_用語" in raw_filename:
         mode, exam_name = "2", raw_filename.replace("_記述式", "").replace("_用語", "")
     else:
-        return jsonify({"error": "ファイル名に「_選択式」「_記述式」「_用語」を含めてください"}), 400
+        return jsonify({"error": "ファイル名に「_選択式」「_記述式」を含めてください"}), 400
 
-    # CSV/uploads に保存
     file_path = os.path.join(UPLOAD_DIR, filename)
     file.save(file_path)
 
@@ -285,7 +296,6 @@ def reset_history():
     backup_and_restore_db()
     return jsonify({"message": "Reset successful"})
 
-# 管理者用：全履歴CSV出力API
 @app.route('/admin/export_history', methods=['GET'])
 @login_required
 def export_history():
