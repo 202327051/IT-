@@ -139,16 +139,16 @@ init_database()
 def index():
     return render_template('index.html')
 
-# 日本語ファイル名でも502エラーを起こさない安全なテンプレートダウンロード
+# ダウンロード時のファイル名を「〇〇_選択式.csv」「〇〇_記述式.csv」に変更
 @app.route('/download_template/<mode_type>', methods=['GET'])
 @login_required
 def download_template(mode_type):
     if mode_type == "1":
         headers = ["ジャンル", "問題文", "ア", "イ", "ウ", "エ", "正解", "解説"]
-        filename = "テンプレート_選択式.csv"
+        filename = "〇〇_選択式.csv"
     else:
         headers = ["ジャンル", "問題文", "必須キーワード", "模範解答"]
-        filename = "テンプレート_記述式.csv"
+        filename = "〇〇_記述式.csv"
     
     csv_content = "\ufeff" + ",".join(headers) + "\n"
     encoded_filename = urllib.parse.quote(filename)
@@ -166,7 +166,6 @@ def get_exams():
         exams = db.execute("SELECT DISTINCT exam_type FROM questions WHERE user_id = ? OR user_id = 0", (current_user.id,)).fetchall()
     return jsonify({"exams": [e[0] for e in exams]})
 
-# 選択された資格に「どのモードの問題が存在するか」を返すAPI
 @app.route('/get_available_modes', methods=['POST'])
 @login_required
 def get_available_modes():
@@ -175,6 +174,7 @@ def get_available_modes():
         modes = db.execute("SELECT DISTINCT mode FROM questions WHERE (user_id = ? OR user_id = 0) AND exam_type = ?", (current_user.id, exam_type)).fetchall()
     return jsonify({"modes": [m[0] for m in modes]})
 
+# 日本語ファイル名がsecure_filenameで消去されないよう元のファイル名を保持する修正
 @app.route('/upload_csv', methods=['POST'])
 @login_required
 def upload_csv():
@@ -182,10 +182,12 @@ def upload_csv():
         return jsonify({"error": "ファイルが正しくありません"}), 400
 
     file = request.files['file']
-    filename = secure_filename(file.filename)
-    raw_filename = os.path.splitext(filename)[0]
+    original_filename = file.filename
+    raw_filename = os.path.splitext(original_filename)[0]
 
-    file_path = os.path.join(UPLOAD_DIR, filename)
+    # 保存用に安全なファイル名も準備
+    safe_save_name = f"upload_{current_user.id}_{int(datetime.datetime.now().timestamp())}.csv"
+    file_path = os.path.join(UPLOAD_DIR, safe_save_name)
     file.save(file_path)
 
     success, result = process_csv_file(file_path, current_user.id, raw_filename)
