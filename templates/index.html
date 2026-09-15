@@ -14,6 +14,7 @@
         .user { align-self: flex-end; background: var(--user-bubble); color: black; border-top-right-radius: 2px; }
         .input-area-fixed { background: #f8f8f8; padding: 10px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+        .exam-item { display: flex; align-items: center; gap: 4px; }
         .input-bar { display: flex; gap: 8px; }
         input[type="text"], input[type="password"] { flex: 1; border: 1px solid #ccc; padding: 10px 15px; border-radius: 25px; font-size: 16px; outline: none; }
         button { border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; cursor: pointer; }
@@ -21,6 +22,7 @@
         .btn-send { background: #28a745; color: white; }
         .btn-red { background: #dc3545; color: white; }
         .btn-gray { background: #6c757d; color: white; }
+        .btn-del { background: #ff4d4d; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; }
         .choice-btn { background: white; border: 1px solid #007bff; color: #007bff; padding: 8px 20px; }
         .hidden { display: none !important; }
         table { width: 100%; border-collapse: collapse; margin-top: 5px; background: white; font-size: 12px; }
@@ -65,6 +67,7 @@
             <div id="mode-select" class="controls hidden">
                 <button onclick="startApp('1')" id="mode1-btn" class="btn-blue hidden">選択式モード</button>
                 <button onclick="startApp('2')" id="mode2-btn" class="btn-blue hidden">記述式モード</button>
+                <button onclick="backToTop()" class="btn-gray">戻る（資格一覧へ）</button>
             </div>
             <div id="choice-area" class="controls hidden">
                 <button class="choice-btn" onclick="handleAnswer('ア')">ア</button>
@@ -135,16 +138,50 @@
             selectArea.innerHTML = "";
             if (data.exams && data.exams.length > 0) {
                 addMsg("bot", "勉強したい資格を選んでください。（新しい問題CSVをアップロードすることも可能です）");
-                data.exams.forEach(exam => {
+                data.exams.forEach(examObj => {
+                    const item = document.createElement("div");
+                    item.className = "exam-item";
+                    
                     const btn = document.createElement("button");
                     btn.className = "btn-blue";
-                    btn.innerText = exam;
-                    btn.onclick = () => selectExamMode(exam);
-                    selectArea.appendChild(btn);
+                    btn.innerText = examObj.name;
+                    btn.onclick = () => selectExamMode(examObj.name);
+                    item.appendChild(btn);
+
+                    if (examObj.can_delete) {
+                        const delBtn = document.createElement("button");
+                        delBtn.className = "btn-del";
+                        delBtn.innerText = "削除";
+                        delBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            deleteExam(examObj.name);
+                        };
+                        item.appendChild(delBtn);
+                    }
+
+                    selectArea.appendChild(item);
                 });
                 selectArea.classList.remove("hidden");
             } else {
                 addMsg("bot", "まだ問題が登録されていません。上のテンプレートリンクからファイルをダウンロードし、編集してアップロードしてください！");
+            }
+        }
+
+        async function deleteExam(examName) {
+            if (confirm(`本当に「${examName}」の問題データを削除しますか？`)) {
+                const res = await fetch('/delete_exam', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({exam_type: examName})
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    alert(data.message);
+                    document.getElementById("chat-box").innerHTML = "";
+                    initChat();
+                } else {
+                    alert("削除に失敗しました");
+                }
             }
         }
 
