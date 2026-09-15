@@ -160,9 +160,7 @@
                 alert(data.message);
                 fileInput.value = "";
                 initChat();
-            } else {
-                alert(data.error);
-            }
+            } else { alert(data.error); }
         }
 
         function selectExamMode(exam) {
@@ -184,8 +182,7 @@
 
         function startApp(m) {
             mode = m; qCount = 0; sessionId = Date.now().toString(); hideAllControls();
-            const modeName = m === "1" ? "選択式モード" : "記述式/用語説明モード";
-            addMsg("bot", `<b>--- ${selectedExam} の ${modeName} を開始 ---</b>`);
+            addMsg("bot", `<b>--- ${selectedExam} の ${m === "1" ? "選択式モード" : "記述式/用語説明モード"} を開始 ---</b>`);
             loadQuestion();
         }
 
@@ -198,7 +195,7 @@
             });
             const data = await res.json();
             if (!res.ok || data.error || !data.question) {
-                addMsg("bot", `<span style="color:red">⚠️「${selectedExam}」には、選択したモードの問題データがまだ登録されていません。ファイル名に「_選択式」「_記述式」「_用語」が含まれているか再度確認してください。</span>`);
+                addMsg("bot", `<span style="color:red">⚠️「${selectedExam}」には対象モードの問題データがありません。</span>`);
                 backToTop();
                 return;
             }
@@ -220,12 +217,10 @@
             if (mode === "1") {
                 fb = `<b>${data.score ? "⭕ 正解！" : "❌ 不正解..." }</b><br>正解: ${data.correct}<br><br>【解説】<br>${data.explanation}`;
                 document.getElementById("finish-btn").classList.remove("hidden");
-                document.getElementById("exit-btn").classList.add("hidden");
             } else {
                 fb = `<b>採点結果</b><br>得点: ${data.score} / ${data.max}<br>必須キーワード: ${data.keywords.join(", ")}<br>`;
                 fb += (data.miss && data.miss.length > 0) ? `<span style="color:red">不足: ${data.miss.join(", ")}</span><br>` : `<span style="color:blue">✨キーワードをすべて網羅しています！</span><br>`;
                 fb += `<br><b>【模範解答】</b><br>${data.correct}`;
-                document.getElementById("finish-btn").classList.add("hidden");
                 document.getElementById("exit-btn").classList.remove("hidden");
             }
             addMsg("bot", fb.replace(/\n/g, "<br>"));
@@ -251,10 +246,7 @@
             document.getElementById("graph-menu").classList.remove("hidden");
         }
 
-        function backToTop() {
-            hideAllControls();
-            initChat();
-        }
+        function backToTop() { hideAllControls(); initChat(); }
 
         function hideAllControls() {
             ["upload-area", "exam-select", "mode-select", "choice-area", "next-area", "menu-area", "graph-menu"].forEach(id => {
