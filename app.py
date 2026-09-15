@@ -12,6 +12,7 @@ import base64
 import os
 import glob
 import shutil
+import urllib.parse
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -71,10 +72,10 @@ def normalize_choice(text):
 # CSV取り込み処理共通関数
 # -----------------------------
 def process_csv_file(file_path, target_user_id, raw_filename):
-    if "_選択式" in raw_filename or "_過去問" in raw_filename:
-        mode, exam_name = "1", raw_filename.replace("_選択式", "").replace("_過去問", "")
-    elif "_記述式" in raw_filename or "_用語" in raw_filename:
-        mode, exam_name = "2", raw_filename.replace("_記述式", "").replace("_用語", "")
+    if "_選択式" in raw_filename:
+        mode, exam_name = "1", raw_filename.replace("_選択式", "")
+    elif "_記述式" in raw_filename:
+        mode, exam_name = "2", raw_filename.replace("_記述式", "")
     else:
         return False, "ファイル名に「_選択式」「_記述式」を含めてください"
 
@@ -123,7 +124,6 @@ def init_database():
         """)
         conn.commit()
 
-    # CSV/official 内の公式問題をシステム枠(user_id=0)として読み込み
     official_files = glob.glob(os.path.join(OFFICIAL_DIR, "*.csv"))
     for filepath in official_files:
         filename = os.path.basename(filepath)
@@ -139,32 +139,41 @@ init_database()
 def index():
     return render_template('index.html')
 
-# テンプレートダウンロード（502エラー回避のためファイル名を英数字指定）
+# 日本語ファイル名でも502エラーを起こさない安全なテンプレートダウンロード
 @app.route('/download_template/<mode_type>', methods=['GET'])
 @login_required
 def download_template(mode_type):
     if mode_type == "1":
         headers = ["ジャンル", "問題文", "ア", "イ", "ウ", "エ", "正解", "解説"]
-        filename = "template_choice.csv"
+        filename = "テンプレート_選択式.csv"
     else:
         headers = ["ジャンル", "問題文", "必須キーワード", "模範解答"]
-        filename = "template_descriptive.csv"
+        filename = "テンプレート_記述式.csv"
     
     csv_content = "\ufeff" + ",".join(headers) + "\n"
+    encoded_filename = urllib.parse.quote(filename)
     
     return Response(
         csv_content,
         mimetype="text/csv; charset=utf-8",
-        headers={"Content-disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
     )
 
-# 公式問題(user_id=0)とユーザー自作(current_user.id)を両方取得
 @app.route('/get_exams', methods=['GET'])
 @login_required
 def get_exams():
     with sqlite3.connect(DB_PATH, timeout=30) as db:
         exams = db.execute("SELECT DISTINCT exam_type FROM questions WHERE user_id = ? OR user_id = 0", (current_user.id,)).fetchall()
     return jsonify({"exams": [e[0] for e in exams]})
+
+# 選択された資格に「どのモードの問題が存在するか」を返すAPI
+@app.route('/get_available_modes', methods=['POST'])
+@login_required
+def get_available_modes():
+    exam_type = request.json.get("exam_type")
+    with sqlite3.connect(DB_PATH, timeout=30) as db:
+        modes = db.execute("SELECT DISTINCT mode FROM questions WHERE (user_id = ? OR user_id = 0) AND exam_type = ?", (current_user.id, exam_type)).fetchall()
+    return jsonify({"modes": [m[0] for m in modes]})
 
 @app.route('/upload_csv', methods=['POST'])
 @login_required
