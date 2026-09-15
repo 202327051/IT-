@@ -10,6 +10,7 @@ import datetime
 import io
 import base64
 import os
+import glob
 import shutil
 import matplotlib
 matplotlib.use('Agg')
@@ -24,7 +25,10 @@ login_manager.init_app(app)
 
 DB_PATH = "History.db"
 BACKUP_DIR = "backups"
+OFFICIAL_DIR = os.path.join("CSV", "official")
 UPLOAD_DIR = os.path.join("CSV", "uploads")
+
+os.makedirs(OFFICIAL_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 class User(UserMixin):
@@ -50,7 +54,7 @@ def backup_and_restore_db():
         shutil.copy(DB_PATH, backup_path)
 
 # -----------------------------
-# ユーティリティ & DB初期化
+# ユーティリティ
 # -----------------------------
 def normalize_text(text):
     text = unicodedata.normalize("NFKC", str(text)).lower()
@@ -63,6 +67,48 @@ def normalize_choice(text):
     mapping = {"a": "ア", "ａ": "ア", "i": "イ", "ｉ": "イ", "u": "ウ", "ｕ": "ウ", "e": "エ", "ｅ": "エ"}
     return mapping.get(text, text)
 
+# -----------------------------
+# CSV取り込み処理共通関数
+# -----------------------------
+def process_csv_file(file_path, target_user_id, raw_filename):
+    if "_選択式" in raw_filename or "_過去問" in raw_filename:
+        mode, exam_name = "1", raw_filename.replace("_選択式", "").replace("_過去問", "")
+    elif "_記述式" in raw_filename or "_用語" in raw_filename:
+        mode, exam_name = "2", raw_filename.replace("_記述式", "").replace("_用語", "")
+    else:
+        return False, "ファイル名に「_選択式」「_記述式」を含めてください"
+
+    try:
+        try:
+            df = pd.read_csv(file_path, encoding="utf-8-sig")
+        except:
+            df = pd.read_csv(file_path, encoding="shift-jis")
+
+        df.columns = [c.strip() for c in df.columns]
+
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ? AND mode = ?", (target_user_id, exam_name, mode))
+            for _, q in df.iterrows():
+                genre, prob = str(q.get("ジャンル", "一般")).strip(), str(q.get("問題文", "")).strip()
+                if not prob: continue
+                if mode == "1":
+                    conn.execute("""
+                        INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, ア, イ, ウ, エ, 正解, 解説, mode)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1')
+                    """, (target_user_id, exam_name, genre, prob, str(q.get("ア","")), str(q.get("イ","")), str(q.get("ウ","")), str(q.get("エ","")), str(q.get("正解","")).strip(), str(q.get("解説","")).strip()))
+                else:
+                    conn.execute("""
+                        INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, 必須キーワード, 模範解答, mode)
+                        VALUES (?, ?, ?, ?, ?, ?, '2')
+                    """, (target_user_id, exam_name, genre, prob, str(q.get("必須キーワード","")).strip(), str(q.get("模範解答","")).strip()))
+            conn.commit()
+        return True, exam_name
+    except Exception as e:
+        return False, str(e)
+
+# -----------------------------
+# DB初期化 & Officialフォルダ同期
+# -----------------------------
 def init_database():
     backup_and_restore_db()
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
@@ -77,6 +123,13 @@ def init_database():
         """)
         conn.commit()
 
+    # CSV/official 内の公式問題をシステム枠(user_id=0)として読み込み
+    official_files = glob.glob(os.path.join(OFFICIAL_DIR, "*.csv"))
+    for filepath in official_files:
+        filename = os.path.basename(filepath)
+        raw_name = os.path.splitext(filename)[0]
+        process_csv_file(filepath, target_user_id=0, raw_filename=raw_name)
+
 init_database()
 
 # -----------------------------
@@ -86,16 +139,16 @@ init_database()
 def index():
     return render_template('index.html')
 
-# 空の入力用テンプレートCSV動的生成（UTF-8 BOM付きでExcel文字化け防止）
+# テンプレートダウンロード（502エラー回避のためファイル名を英数字指定）
 @app.route('/download_template/<mode_type>', methods=['GET'])
 @login_required
 def download_template(mode_type):
     if mode_type == "1":
         headers = ["ジャンル", "問題文", "ア", "イ", "ウ", "エ", "正解", "解説"]
-        filename = "テンプレート_選択式.csv"
+        filename = "template_choice.csv"
     else:
         headers = ["ジャンル", "問題文", "必須キーワード", "模範解答"]
-        filename = "テンプレート_記述式.csv"
+        filename = "template_descriptive.csv"
     
     csv_content = "\ufeff" + ",".join(headers) + "\n"
     
@@ -105,11 +158,12 @@ def download_template(mode_type):
         headers={"Content-disposition": f"attachment; filename={filename}"}
     )
 
+# 公式問題(user_id=0)とユーザー自作(current_user.id)を両方取得
 @app.route('/get_exams', methods=['GET'])
 @login_required
 def get_exams():
     with sqlite3.connect(DB_PATH, timeout=30) as db:
-        exams = db.execute("SELECT DISTINCT exam_type FROM questions WHERE user_id = ?", (current_user.id,)).fetchall()
+        exams = db.execute("SELECT DISTINCT exam_type FROM questions WHERE user_id = ? OR user_id = 0", (current_user.id,)).fetchall()
     return jsonify({"exams": [e[0] for e in exams]})
 
 @app.route('/upload_csv', methods=['POST'])
@@ -122,45 +176,15 @@ def upload_csv():
     filename = secure_filename(file.filename)
     raw_filename = os.path.splitext(filename)[0]
 
-    if "_選択式" in raw_filename or "_過去問" in raw_filename:
-        mode, exam_name = "1", raw_filename.replace("_選択式", "").replace("_過去問", "")
-    elif "_記述式" in raw_filename or "_用語" in raw_filename:
-        mode, exam_name = "2", raw_filename.replace("_記述式", "").replace("_用語", "")
-    else:
-        return jsonify({"error": "ファイル名に「_選択式」「_記述式」を含めてください"}), 400
-
     file_path = os.path.join(UPLOAD_DIR, filename)
     file.save(file_path)
 
-    try:
-        try:
-            df = pd.read_csv(file_path, encoding="utf-8-sig")
-        except:
-            df = pd.read_csv(file_path, encoding="shift-jis")
-
-        df.columns = [c.strip() for c in df.columns]
-
-        with sqlite3.connect(DB_PATH, timeout=30) as conn:
-            conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ? AND mode = ?", (current_user.id, exam_name, mode))
-            for _, q in df.iterrows():
-                genre, prob = str(q.get("ジャンル", "一般")).strip(), str(q.get("問題文", "")).strip()
-                if not prob: continue
-                if mode == "1":
-                    conn.execute("""
-                        INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, ア, イ, ウ, エ, 正解, 解説, mode)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1')
-                    """, (current_user.id, exam_name, genre, prob, str(q.get("ア","")), str(q.get("イ","")), str(q.get("ウ","")), str(q.get("エ","")), str(q.get("正解","")).strip(), str(q.get("解説","")).strip()))
-                else:
-                    conn.execute("""
-                        INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, 必須キーワード, 模範解答, mode)
-                        VALUES (?, ?, ?, ?, ?, ?, '2')
-                    """, (current_user.id, exam_name, genre, prob, str(q.get("必須キーワード","")).strip(), str(q.get("模範解答","")).strip()))
-            conn.commit()
-
+    success, result = process_csv_file(file_path, current_user.id, raw_filename)
+    if success:
         backup_and_restore_db()
-        return jsonify({"message": f"「{exam_name}」を正常に登録しました！"})
-    except Exception as e:
-        return jsonify({"error": f"CSV解析失敗: {str(e)}"}), 500
+        return jsonify({"message": f"「{result}」を正常に登録しました！"})
+    else:
+        return jsonify({"error": f"CSV登録失敗: {result}"}), 400
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -198,13 +222,13 @@ def get_question():
     with sqlite3.connect(DB_PATH, timeout=30) as db:
         q = db.execute("""
             SELECT id, ジャンル, 問題文, ア, イ, ウ, エ, exam_type FROM questions 
-            WHERE user_id = ? AND mode = ? AND exam_type = ?
+            WHERE (user_id = ? OR user_id = 0) AND mode = ? AND exam_type = ?
             AND id NOT IN (SELECT 問題ID FROM history WHERE user_id = ? AND session_id = ? AND mode = ?)
             ORDER BY RANDOM() LIMIT 1
         """, (current_user.id, mode, selected_exam, current_user.id, session_id, mode)).fetchone()
         
         if not q:
-            q = db.execute("SELECT id, ジャンル, 問題文, ア, イ, ウ, エ, exam_type FROM questions WHERE user_id = ? AND mode = ? AND exam_type = ? ORDER BY RANDOM() LIMIT 1", (current_user.id, mode, selected_exam)).fetchone()
+            q = db.execute("SELECT id, ジャンル, 問題文, ア, イ, ウ, エ, exam_type FROM questions WHERE (user_id = ? OR user_id = 0) AND mode = ? AND exam_type = ? ORDER BY RANDOM() LIMIT 1", (current_user.id, mode, selected_exam)).fetchone()
 
     if not q: return jsonify({"error": "問題がありません"}), 404
 
