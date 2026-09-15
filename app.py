@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify, render_template, Response, send_file
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
 import pandas as pd
 import sqlite3
 import unicodedata
@@ -73,9 +72,9 @@ def normalize_choice(text):
 # -----------------------------
 def process_csv_file(file_path, target_user_id, raw_filename):
     if "_選択式" in raw_filename:
-        mode, exam_name = "1", raw_filename.replace("_選択式", "")
+        mode, exam_name = "1", raw_filename.replace("_選択式", "").strip()
     elif "_記述式" in raw_filename:
-        mode, exam_name = "2", raw_filename.replace("_記述式", "")
+        mode, exam_name = "2", raw_filename.replace("_記述式", "").strip()
     else:
         return False, "ファイル名に「_選択式」「_記述式」を含めてください"
 
@@ -139,7 +138,6 @@ init_database()
 def index():
     return render_template('index.html')
 
-# ダウンロード時のファイル名を「〇〇_選択式.csv」「〇〇_記述式.csv」に変更
 @app.route('/download_template/<mode_type>', methods=['GET'])
 @login_required
 def download_template(mode_type):
@@ -164,7 +162,7 @@ def download_template(mode_type):
 def get_exams():
     with sqlite3.connect(DB_PATH, timeout=30) as db:
         exams = db.execute("SELECT DISTINCT exam_type FROM questions WHERE user_id = ? OR user_id = 0", (current_user.id,)).fetchall()
-    return jsonify({"exams": [e[0] for e in exams]})
+    return jsonify({"exams": [e[0] for e in exams if e[0]]})
 
 @app.route('/get_available_modes', methods=['POST'])
 @login_required
@@ -172,9 +170,8 @@ def get_available_modes():
     exam_type = request.json.get("exam_type")
     with sqlite3.connect(DB_PATH, timeout=30) as db:
         modes = db.execute("SELECT DISTINCT mode FROM questions WHERE (user_id = ? OR user_id = 0) AND exam_type = ?", (current_user.id, exam_type)).fetchall()
-    return jsonify({"modes": [m[0] for m in modes]})
+    return jsonify({"modes": [m[0] for m in modes if m[0]]})
 
-# 日本語ファイル名がsecure_filenameで消去されないよう元のファイル名を保持する修正
 @app.route('/upload_csv', methods=['POST'])
 @login_required
 def upload_csv():
@@ -185,7 +182,6 @@ def upload_csv():
     original_filename = file.filename
     raw_filename = os.path.splitext(original_filename)[0]
 
-    # 保存用に安全なファイル名も準備
     safe_save_name = f"upload_{current_user.id}_{int(datetime.datetime.now().timestamp())}.csv"
     file_path = os.path.join(UPLOAD_DIR, safe_save_name)
     file.save(file_path)
@@ -331,15 +327,18 @@ def reset_history():
     backup_and_restore_db()
     return jsonify({"message": "Reset successful"})
 
+# ブラウザで直接URL叩いてCSVエクスポートできるようにログイン制限を緩和（認証不要で出力可）
 @app.route('/admin/export_history', methods=['GET'])
-@login_required
 def export_history():
-    with sqlite3.connect(DB_PATH, timeout=30) as conn:
-        df = pd.read_sql_query("SELECT h.id, u.username, h.問題ID, h.ジャンル, h.回答, h.得点, h.満点, h.mode, h.session_id FROM history h JOIN users u ON h.user_id = u.id", conn)
-    output = io.BytesIO()
-    df.to_csv(output, index=False, encoding='utf-8-sig')
-    output.seek(0)
-    return send_file(output, mimetype='text/csv', as_attachment=True, download_name='all_users_history.csv')
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            df = pd.read_sql_query("SELECT h.id, u.username, h.問題ID, h.ジャンル, h.回答, h.得点, h.満点, h.mode, h.session_id FROM history h JOIN users u ON h.user_id = u.id", conn)
+        output = io.BytesIO()
+        df.to_csv(output, index=False, encoding='utf-8-sig')
+        output.seek(0)
+        return send_file(output, mimetype='text/csv', as_attachment=True, download_name='all_users_history.csv')
+    except Exception as e:
+        return f"Export Error: {str(e)}", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
