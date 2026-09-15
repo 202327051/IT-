@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, Response
+from flask import Flask, request, jsonify, render_template, Response, send_file
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -23,7 +23,7 @@ CORS(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 
-# 大文字小文字の不一致を防止（すべて小文字に統一）
+# GitHub上のファイル名に合わせて小文字の "history.db" に統一
 DB_PATH = "history.db"
 BACKUP_DIR = "backups"
 OFFICIAL_DIR = os.path.join("CSV", "official")
@@ -40,15 +40,23 @@ class User(UserMixin):
 def load_user(user_id):
     return User(user_id)
 
+# -----------------------------
+# DBバックアップ & 自動復元
+# -----------------------------
 def backup_and_restore_db():
     os.makedirs(BACKUP_DIR, exist_ok=True)
     backup_path = os.path.join(BACKUP_DIR, "history_backup.db")
+
     if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
         if os.path.exists(backup_path):
             shutil.copy(backup_path, DB_PATH)
+
     if os.path.exists(DB_PATH) and os.path.getsize(DB_PATH) > 0:
         shutil.copy(DB_PATH, backup_path)
 
+# -----------------------------
+# ユーティリティ
+# -----------------------------
 def normalize_text(text):
     text = unicodedata.normalize("NFKC", str(text)).lower()
     return text.replace(" ", "").replace("．", "").replace(".", "").replace(",", "")
@@ -60,6 +68,9 @@ def normalize_choice(text):
     mapping = {"a": "ア", "ａ": "ア", "i": "イ", "ｉ": "イ", "u": "ウ", "ｕ": "ウ", "e": "エ", "ｅ": "エ"}
     return mapping.get(text, text)
 
+# -----------------------------
+# CSV取り込み処理共通関数
+# -----------------------------
 def process_csv_file(file_path, target_user_id, raw_filename):
     if "_選択式" in raw_filename:
         mode, exam_name = "1", raw_filename.replace("_選択式", "").strip()
@@ -77,6 +88,7 @@ def process_csv_file(file_path, target_user_id, raw_filename):
         df.columns = [c.strip() for c in df.columns]
 
         with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            # 同一ユーザー・同一資格・同一モードの古い問題を削除して上書き更新
             conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ? AND mode = ?", (target_user_id, exam_name, mode))
             for _, q in df.iterrows():
                 genre, prob = str(q.get("ジャンル", "一般")).strip(), str(q.get("問題文", "")).strip()
@@ -96,6 +108,9 @@ def process_csv_file(file_path, target_user_id, raw_filename):
     except Exception as e:
         return False, str(e)
 
+# -----------------------------
+# DB初期化 & Officialフォルダ同期
+# -----------------------------
 def init_database():
     backup_and_restore_db()
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
@@ -118,6 +133,9 @@ def init_database():
 
 init_database()
 
+# -----------------------------
+# ルーティング
+# -----------------------------
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -145,11 +163,8 @@ def download_template(mode_type):
 @login_required
 def get_exams():
     with sqlite3.connect(DB_PATH, timeout=30) as db:
-        exams = db.execute("""
-            SELECT DISTINCT exam_type FROM questions WHERE user_id = ?
-            UNION
-            SELECT DISTINCT exam_type FROM questions WHERE user_id = 0
-        """, (current_user.id,)).fetchall()
+        # 公式（user_id=0）とログインユーザー自身の資格をすべて取得
+        exams = db.execute("SELECT DISTINCT exam_type FROM questions WHERE user_id = ? OR user_id = 0", (current_user.id,)).fetchall()
     return jsonify({"exams": [e[0] for e in exams if e[0]]})
 
 @app.route('/get_available_modes', methods=['POST'])
@@ -157,10 +172,7 @@ def get_exams():
 def get_available_modes():
     exam_type = request.json.get("exam_type")
     with sqlite3.connect(DB_PATH, timeout=30) as db:
-        modes = db.execute("""
-            SELECT DISTINCT mode FROM questions 
-            WHERE (user_id = ? OR user_id = 0) AND exam_type = ?
-        """, (current_user.id, exam_type)).fetchall()
+        modes = db.execute("SELECT DISTINCT mode FROM questions WHERE (user_id = ? OR user_id = 0) AND exam_type = ?", (current_user.id, exam_type)).fetchall()
     return jsonify({"modes": [m[0] for m in modes if m[0]]})
 
 @app.route('/upload_csv', methods=['POST'])
@@ -218,18 +230,20 @@ def get_question():
     mode, selected_exam, session_id = str(data.get("mode")), data.get("exam_type"), data.get("session_id")
 
     with sqlite3.connect(DB_PATH, timeout=30) as db:
-        user_has_q = db.execute("SELECT 1 FROM questions WHERE user_id = ? AND exam_type = ? AND mode = ?", (current_user.id, selected_exam, mode)).fetchone()
-        target_uid = current_user.id if user_has_q else 0
-
+        # ユーザー自身の個別データがあれば優先、なければ公式（0）のデータを取得
         q = db.execute("""
             SELECT id, ジャンル, 問題文, ア, イ, ウ, エ, exam_type FROM questions 
-            WHERE user_id = ? AND mode = ? AND exam_type = ?
+            WHERE (user_id = ? OR user_id = 0) AND mode = ? AND exam_type = ?
             AND id NOT IN (SELECT 問題ID FROM history WHERE user_id = ? AND session_id = ? AND mode = ?)
-            ORDER BY RANDOM() LIMIT 1
-        """, (target_uid, mode, selected_exam, current_user.id, session_id, mode)).fetchone()
+            ORDER BY user_id DESC, RANDOM() LIMIT 1
+        """, (current_user.id, mode, selected_exam, current_user.id, session_id, mode)).fetchone()
         
         if not q:
-            q = db.execute("SELECT id, ジャンル, 問題文, ア, イ, ウ, エ, exam_type FROM questions WHERE user_id = ? AND mode = ? AND exam_type = ? ORDER BY RANDOM() LIMIT 1", (target_uid, mode, selected_exam)).fetchone()
+            q = db.execute("""
+                SELECT id, ジャンル, 問題文, ア, イ, ウ, エ, exam_type FROM questions 
+                WHERE (user_id = ? OR user_id = 0) AND mode = ? AND exam_type = ? 
+                ORDER BY user_id DESC, RANDOM() LIMIT 1
+            """, (current_user.id, mode, selected_exam)).fetchone()
 
     if not q: return jsonify({"error": "問題がありません"}), 404
 
@@ -320,6 +334,19 @@ def reset_history():
         conn.commit()
     backup_and_restore_db()
     return jsonify({"message": "Reset successful"})
+
+# 直接アクセスに対応させた全ユーザー履歴ダウンロード機能
+@app.route('/admin/export_history', methods=['GET'])
+def export_history():
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            df = pd.read_sql_query("SELECT h.id, u.username, h.問題ID, h.ジャンル, h.回答, h.得点, h.満点, h.mode, h.session_id FROM history h JOIN users u ON h.user_id = u.id", conn)
+        output = io.BytesIO()
+        df.to_csv(output, index=False, encoding='utf-8-sig')
+        output.seek(0)
+        return send_file(output, mimetype='text/csv', as_attachment=True, download_name='all_users_history.csv')
+    except Exception as e:
+        return f"Export Error: {str(e)}", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
