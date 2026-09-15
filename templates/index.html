@@ -162,14 +162,28 @@
             } else { alert(data.error); }
         }
 
-        function selectExamMode(exam) {
+        async function selectExamMode(exam) {
             selectedExam = exam;
             addMsg("user", `${exam} を勉強します`);
             hideAllControls();
-            addMsg("bot", `「${exam}」ですね。この資格で利用可能な学習モードを選んでください。`);
+            
+            // 対象資格で登録されているモードを取得して、存在するモードのボタンのみを表示
+            const res = await fetch('/get_available_modes', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({exam_type: exam})
+            });
+            const data = await res.json();
+
+            addMsg("bot", `「${exam}」ですね。学習モードを選んでください。`);
             document.getElementById("mode-select").classList.remove("hidden");
-            document.getElementById("mode1-btn").classList.remove("hidden");
-            document.getElementById("mode2-btn").classList.remove("hidden");
+            
+            if (data.modes.includes("1")) {
+                document.getElementById("mode1-btn").classList.remove("hidden");
+            }
+            if (data.modes.includes("2")) {
+                document.getElementById("mode2-btn").classList.remove("hidden");
+            }
         }
 
         function sendMessage() {
