@@ -51,21 +51,20 @@
             <div id="upload-area" class="controls hidden">
                 <div class="upload-zone">
                     <div style="margin-bottom: 8px;">
-                        【テンプレート】
+                        【入力テンプレート】
                         <span class="tmpl-link" onclick="location.href='/download_template/1'">選択式</span> | 
-                        <span class="tmpl-link" onclick="location.href='/download_template/2'">記述式</span> | 
-                        <span class="tmpl-link" onclick="location.href='/download_template/3'">用語説明</span>
+                        <span class="tmpl-link" onclick="location.href='/download_template/2'">記述式</span>
                     </div>
                     <hr style="border:0; border-top:1px solid #ccc; margin:8px 0;">
                     問題CSVを選択: <input type="file" id="csv-file" accept=".csv" style="font-size:11px;">
                     <button onclick="uploadCSV()" class="btn-send" style="padding:4px 10px; font-size:11px;">登録</button>
-                    <div style="font-size:10px; color:#555; margin-top:4px;">※ファイル名は「〇〇_選択式.csv」「〇〇_記述式.csv」「〇〇_用語.csv」にしてください</div>
+                    <div style="font-size:10px; color:#555; margin-top:4px;">※ファイル名は「〇〇_選択式.csv」「〇〇_記述式.csv」にしてください</div>
                 </div>
             </div>
             <div id="exam-select" class="controls hidden"></div>
             <div id="mode-select" class="controls hidden">
                 <button onclick="startApp('1')" id="mode1-btn" class="btn-blue hidden">選択式モード</button>
-                <button onclick="startApp('2')" id="mode2-btn" class="btn-blue hidden">記述式/用語説明モード</button>
+                <button onclick="startApp('2')" id="mode2-btn" class="btn-blue hidden">記述式モード</button>
             </div>
             <div id="choice-area" class="controls hidden">
                 <button class="choice-btn" onclick="handleAnswer('ア')">ア</button>
@@ -182,7 +181,7 @@
 
         function startApp(m) {
             mode = m; qCount = 0; sessionId = Date.now().toString(); hideAllControls();
-            addMsg("bot", `<b>--- ${selectedExam} の ${m === "1" ? "選択式モード" : "記述式/用語説明モード"} を開始 ---</b>`);
+            addMsg("bot", `<b>--- ${selectedExam} の ${m === "1" ? "選択式モード" : "記述式モード"} を開始 ---</b>`);
             loadQuestion();
         }
 
