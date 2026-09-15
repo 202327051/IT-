@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, Response, send_file
+from flask import Flask, request, jsonify, render_template, Response
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -23,7 +23,6 @@ CORS(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 
-# GitHub上のファイル名に合わせて小文字の "history.db" に統一
 DB_PATH = "history.db"
 BACKUP_DIR = "backups"
 OFFICIAL_DIR = os.path.join("CSV", "official")
@@ -88,7 +87,6 @@ def process_csv_file(file_path, target_user_id, raw_filename):
         df.columns = [c.strip() for c in df.columns]
 
         with sqlite3.connect(DB_PATH, timeout=30) as conn:
-            # 同一ユーザー・同一資格・同一モードの古い問題を削除して上書き更新
             conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ? AND mode = ?", (target_user_id, exam_name, mode))
             for _, q in df.iterrows():
                 genre, prob = str(q.get("ジャンル", "一般")).strip(), str(q.get("問題文", "")).strip()
@@ -163,9 +161,29 @@ def download_template(mode_type):
 @login_required
 def get_exams():
     with sqlite3.connect(DB_PATH, timeout=30) as db:
-        # 公式（user_id=0）とログインユーザー自身の資格をすべて取得
-        exams = db.execute("SELECT DISTINCT exam_type FROM questions WHERE user_id = ? OR user_id = 0", (current_user.id,)).fetchall()
-    return jsonify({"exams": [e[0] for e in exams if e[0]]})
+        # (exam_type, is_deletable) のペアを取得
+        rows = db.execute("SELECT DISTINCT exam_type, user_id FROM questions WHERE user_id = ? OR user_id = 0", (current_user.id,)).fetchall()
+    
+    exam_dict = {}
+    for exam, uid in rows:
+        if not exam: continue
+        if exam not in exam_dict:
+            exam_dict[exam] = False
+        if uid == current_user.id:
+            exam_dict[exam] = True  # 自分がアップロードした資格は削除可能フラグを立てる
+
+    exams_list = [{"name": k, "can_delete": v} for k, v in exam_dict.items()]
+    return jsonify({"exams": exams_list})
+
+@app.route('/delete_exam', methods=['POST'])
+@login_required
+def delete_exam():
+    exam_type = request.json.get("exam_type")
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ?", (current_user.id, exam_type))
+        conn.commit()
+    backup_and_restore_db()
+    return jsonify({"message": f"「{exam_type}」を削除しました。"})
 
 @app.route('/get_available_modes', methods=['POST'])
 @login_required
@@ -230,7 +248,6 @@ def get_question():
     mode, selected_exam, session_id = str(data.get("mode")), data.get("exam_type"), data.get("session_id")
 
     with sqlite3.connect(DB_PATH, timeout=30) as db:
-        # ユーザー自身の個別データがあれば優先、なければ公式（0）のデータを取得
         q = db.execute("""
             SELECT id, ジャンル, 問題文, ア, イ, ウ, エ, exam_type FROM questions 
             WHERE (user_id = ? OR user_id = 0) AND mode = ? AND exam_type = ?
@@ -334,19 +351,6 @@ def reset_history():
         conn.commit()
     backup_and_restore_db()
     return jsonify({"message": "Reset successful"})
-
-# 直接アクセスに対応させた全ユーザー履歴ダウンロード機能
-@app.route('/admin/export_history', methods=['GET'])
-def export_history():
-    try:
-        with sqlite3.connect(DB_PATH, timeout=30) as conn:
-            df = pd.read_sql_query("SELECT h.id, u.username, h.問題ID, h.ジャンル, h.回答, h.得点, h.満点, h.mode, h.session_id FROM history h JOIN users u ON h.user_id = u.id", conn)
-        output = io.BytesIO()
-        df.to_csv(output, index=False, encoding='utf-8-sig')
-        output.seek(0)
-        return send_file(output, mimetype='text/csv', as_attachment=True, download_name='all_users_history.csv')
-    except Exception as e:
-        return f"Export Error: {str(e)}", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
