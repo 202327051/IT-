@@ -134,7 +134,7 @@
             const selectArea = document.getElementById("exam-select");
             selectArea.innerHTML = "";
             if (data.exams && data.exams.length > 0) {
-                addMsg("bot", "勉強したい自作の資格を選ぶか、新しい問題CSVをアップロードしてください。");
+                addMsg("bot", "勉強したい資格を選んでください。（新しい問題CSVをアップロードすることも可能です）");
                 data.exams.forEach(exam => {
                     const btn = document.createElement("button");
                     btn.className = "btn-blue";
