@@ -167,7 +167,6 @@
             addMsg("user", `${exam} を勉強します`);
             hideAllControls();
             
-            // 対象資格で登録されているモードを取得して、存在するモードのボタンのみを表示
             const res = await fetch('/get_available_modes', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
