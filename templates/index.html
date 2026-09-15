@@ -77,12 +77,12 @@
             </div>
             <div id="next-area" class="controls hidden">
                 <button onclick="loadQuestion()" class="btn-blue">次の問題へ</button>
-                <button id="finish-btn" onclick="finishApp()" class="btn-red">終了・集計</button>
+                <button id="finish-btn" onclick="finishApp()" class="btn-red hidden">終了・集計</button>
                 <button id="exit-btn" onclick="backToTop()" class="btn-gray hidden">トップへ戻る</button>
             </div>
             <div id="menu-area" class="controls hidden">
                 <button onclick="startApp(mode)" class="btn-blue">もう一度解く</button>
-                <button onclick="showGraph()" class="btn-blue">成績グラフ</button>
+                <button id="graph-btn" onclick="showGraph()" class="btn-blue hidden">成績グラフ</button>
                 <button onclick="backToTop()" class="btn-gray">資格を選び直す</button>
             </div>
             <div id="graph-menu" class="controls hidden">
@@ -284,6 +284,10 @@
             let html = `<b>学習結果</b>: ${data.total_rate}% (${data.total_score}/${data.total_max})<br><table><tr><th>ジャンル</th><th>正答率</th></tr>`;
             data.genre_stats.forEach(s => html += `<tr><td>${s.ジャンル}</td><td>${s.rate}%</td></tr>`);
             addMsg("bot", html + "</table><br>次はどうしますか？");
+            
+            if (mode === "1") {
+                document.getElementById("graph-btn").classList.remove("hidden");
+            }
             document.getElementById("menu-area").classList.remove("hidden");
         }
 
@@ -302,7 +306,7 @@
             ["upload-area", "exam-select", "mode-select", "choice-area", "next-area", "menu-area", "graph-menu"].forEach(id => {
                 const target = document.getElementById(id); if(target) target.classList.add("hidden");
             });
-            ["mode1-btn", "mode2-btn"].forEach(id => {
+            ["mode1-btn", "mode2-btn", "finish-btn", "exit-btn", "graph-btn"].forEach(id => {
                 const target = document.getElementById(id); if(target) target.classList.add("hidden");
             });
         }
