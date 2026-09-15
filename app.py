@@ -39,9 +39,6 @@ class User(UserMixin):
 def load_user(user_id):
     return User(user_id)
 
-# -----------------------------
-# DBバックアップ & 自動復元
-# -----------------------------
 def backup_and_restore_db():
     os.makedirs(BACKUP_DIR, exist_ok=True)
     backup_path = os.path.join(BACKUP_DIR, "history_backup.db")
@@ -53,9 +50,6 @@ def backup_and_restore_db():
     if os.path.exists(DB_PATH) and os.path.getsize(DB_PATH) > 0:
         shutil.copy(DB_PATH, backup_path)
 
-# -----------------------------
-# ユーティリティ
-# -----------------------------
 def normalize_text(text):
     text = unicodedata.normalize("NFKC", str(text)).lower()
     return text.replace(" ", "").replace("．", "").replace(".", "").replace(",", "")
@@ -67,9 +61,6 @@ def normalize_choice(text):
     mapping = {"a": "ア", "ａ": "ア", "i": "イ", "ｉ": "イ", "u": "ウ", "ｕ": "ウ", "e": "エ", "ｅ": "エ"}
     return mapping.get(text, text)
 
-# -----------------------------
-# CSV取り込み処理共通関数
-# -----------------------------
 def process_csv_file(file_path, target_user_id, raw_filename):
     if "_選択式" in raw_filename:
         mode, exam_name = "1", raw_filename.replace("_選択式", "").strip()
@@ -106,9 +97,6 @@ def process_csv_file(file_path, target_user_id, raw_filename):
     except Exception as e:
         return False, str(e)
 
-# -----------------------------
-# DB初期化 & Officialフォルダ同期
-# -----------------------------
 def init_database():
     backup_and_restore_db()
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
@@ -131,9 +119,6 @@ def init_database():
 
 init_database()
 
-# -----------------------------
-# ルーティング
-# -----------------------------
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -161,7 +146,6 @@ def download_template(mode_type):
 @login_required
 def get_exams():
     with sqlite3.connect(DB_PATH, timeout=30) as db:
-        # (exam_type, is_deletable) のペアを取得
         rows = db.execute("SELECT DISTINCT exam_type, user_id FROM questions WHERE user_id = ? OR user_id = 0", (current_user.id,)).fetchall()
     
     exam_dict = {}
@@ -170,7 +154,7 @@ def get_exams():
         if exam not in exam_dict:
             exam_dict[exam] = False
         if uid == current_user.id:
-            exam_dict[exam] = True  # 自分がアップロードした資格は削除可能フラグを立てる
+            exam_dict[exam] = True
 
     exams_list = [{"name": k, "can_delete": v} for k, v in exam_dict.items()]
     return jsonify({"exams": exams_list})
@@ -308,9 +292,11 @@ def get_final_stats():
         total_score, total_max = row[0] or 0, row[1] or 0
         total_rate = (total_score / total_max * 100) if total_max > 0 else 0
 
-        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime("%m/%d %H:%M")
-        conn.execute("INSERT INTO session_stats (user_id, timestamp, accuracy) VALUES (?, ?, ?)", (current_user.id, now, total_rate))
-        conn.commit()
+        # 選択式の場合のみ成績統計（グラフ用）に記録
+        if total_max > 0:
+            now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime("%m/%d %H:%M")
+            conn.execute("INSERT INTO session_stats (user_id, timestamp, accuracy) VALUES (?, ?, ?)", (current_user.id, now, total_rate))
+            conn.commit()
 
         df_genre = pd.read_sql_query("SELECT ジャンル, SUM(得点) AS s, SUM(満点) AS m, ROUND(SUM(得点)*100.0/SUM(満点), 1) AS rate FROM history WHERE user_id=? AND session_id=? AND mode='1' GROUP BY ジャンル ORDER BY rate ASC", conn, params=(current_user.id, session_id))
 
