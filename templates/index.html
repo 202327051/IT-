@@ -15,7 +15,6 @@
         .input-area-fixed { background: #f8f8f8; padding: 10px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
         
-        /* 資格選択ボタン（✕統合型） */
         .exam-btn {
             background: #007bff;
             color: white;
@@ -291,6 +290,12 @@
 
         async function handleAnswer(val) {
             isWaitingForAnswer = false; addMsg("user", val); hideAllControls();
+            
+            // AI採点待ちのローディングメッセージ表示
+            if (mode === "2") {
+                addMsg("bot", "🤖 <i>AIが文脈を解釈して採点中...</i>");
+            }
+
             const res = await fetch('/check_answer', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: mode, id: qId, answer: val, session_id: sessionId}) });
             const data = await res.json();
             let fb = "";
@@ -298,9 +303,10 @@
                 fb = `<b>${data.score ? "⭕ 正解！" : "❌ 不正解..." }</b><br>正解: ${data.correct}<br><br>【解説】<br>${data.explanation}`;
                 document.getElementById("finish-btn").classList.remove("hidden");
             } else {
-                fb = `<b>採点結果</b><br>得点: ${data.score} / ${data.max}<br>必須キーワード: ${data.keywords.join(", ")}<br>`;
-                fb += (data.miss && data.miss.length > 0) ? `<span style="color:red">不足: ${data.miss.join(", ")}</span><br>` : `<span style="color:blue">✨キーワードをすべて網羅しています！</span><br>`;
-                fb += `<br><b>【模範解答】</b><br>${data.correct}`;
+                fb = `<b>🤖 AI採点結果</b><br>`;
+                fb += `得点: <b>${data.score} / ${data.max} 点</b><br><br>`;
+                fb += `<b>【AIからのアドバイス】</b><br>${data.feedback}<br><br>`;
+                fb += `<b>【模範解答】</b><br>${data.correct}`;
                 document.getElementById("exit-btn").classList.remove("hidden");
             }
             addMsg("bot", fb.replace(/\n/g, "<br>"));
