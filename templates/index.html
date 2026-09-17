@@ -14,7 +14,13 @@
         .user { align-self: flex-end; background: var(--user-bubble); color: black; border-top-right-radius: 2px; }
         .input-area-fixed { background: #f8f8f8; padding: 10px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-        .exam-item { display: flex; align-items: center; gap: 6px; }
+        
+        /* 資格ボタンと✕ボタンのグループ */
+        .exam-btn-group { display: inline-flex; align-items: center; border-radius: 20px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+        .exam-btn-main { background: #007bff; color: white; border: none; padding: 8px 12px 8px 16px; font-weight: bold; cursor: pointer; font-size: 14px; }
+        .exam-btn-del { background: #0056b3; color: #ffbcbc; border: none; padding: 8px 10px 8px 4px; font-weight: bold; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+        .exam-btn-del:hover { background: #dc3545; color: white; }
+
         .input-bar { display: flex; gap: 8px; }
         input[type="text"], input[type="password"] { flex: 1; border: 1px solid #ccc; padding: 10px 15px; border-radius: 25px; font-size: 16px; outline: none; }
         button { border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; cursor: pointer; }
@@ -22,7 +28,6 @@
         .btn-send { background: #28a745; color: white; }
         .btn-red { background: #dc3545; color: white; }
         .btn-gray { background: #6c757d; color: white; }
-        .btn-del { background: #ff4d4d; color: white; padding: 5px 10px; border-radius: 15px; font-size: 12px; }
         .choice-btn { background: white; border: 1px solid #007bff; color: #007bff; padding: 8px 20px; }
         .hidden { display: none !important; }
         table { width: 100%; border-collapse: collapse; margin-top: 5px; background: white; font-size: 12px; }
@@ -137,30 +142,31 @@
             const selectArea = document.getElementById("exam-select");
             selectArea.innerHTML = "";
             if (data.exams && data.exams.length > 0) {
-                addMsg("bot", "勉強したい資格を選んでください。（自分が追加した資格は「削除」ボタンで消去できます）");
+                addMsg("bot", "勉強したい資格を選んでください。");
                 data.exams.forEach(examObj => {
-                    const item = document.createElement("div");
-                    item.className = "exam-item";
-                    
-                    const btn = document.createElement("button");
-                    btn.className = "btn-blue";
-                    btn.innerText = examObj.name;
-                    btn.onclick = () => selectExamMode(examObj.name);
-                    item.appendChild(btn);
+                    const group = document.createElement("div");
+                    group.className = "exam-btn-group";
 
-                    // ユーザー自身が登録した問題の場合は「削除」ボタンを表示
+                    const mainBtn = document.createElement("button");
+                    mainBtn.className = "exam-btn-main";
+                    mainBtn.innerText = examObj.name;
+                    mainBtn.onclick = () => selectExamMode(examObj.name);
+                    group.appendChild(mainBtn);
+
+                    // 自身が追加した資格なら「✕」削除ボタンを付与
                     if (examObj.can_delete) {
                         const delBtn = document.createElement("button");
-                        delBtn.className = "btn-del";
-                        delBtn.innerText = "削除";
+                        delBtn.className = "exam-btn-del";
+                        delBtn.innerText = "✕";
+                        delBtn.title = "この資格を削除";
                         delBtn.onclick = (e) => {
                             e.stopPropagation();
                             deleteExam(examObj.name);
                         };
-                        item.appendChild(delBtn);
+                        group.appendChild(delBtn);
                     }
 
-                    selectArea.appendChild(item);
+                    selectArea.appendChild(group);
                 });
                 selectArea.classList.remove("hidden");
             } else {
@@ -169,8 +175,7 @@
         }
 
         async function deleteExam(examName) {
-            // 本当に削除してよいか確認ダイアログを表示
-            if (confirm(`【確認】本当に資格「${examName}」を削除してもよろしいですか？\n※登録された問題データおよび成績履歴が完全に削除されます。`)) {
+            if (confirm(`「${examName}」を削除しますか？\n（問題データおよび成績履歴が消去されます）`)) {
                 const res = await fetch('/delete_exam', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -178,7 +183,6 @@
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    alert(data.message);
                     document.getElementById("chat-box").innerHTML = "";
                     initChat();
                 } else {
