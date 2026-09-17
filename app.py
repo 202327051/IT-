@@ -17,13 +17,6 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-# --- 日本語文字化け対策 ---
-try:
-    import japanize_matplotlib
-except ImportError:
-    # japanize_matplotlibがない場合のフォールバック設定
-    matplotlib.rcParams['font.family'] = ['sans-serif', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'IPAexGothic', 'TakaoGothic']
-
 app = Flask(__name__, template_folder='templates')
 app.config['SECRET_KEY'] = 'it-pass-key-2026'
 CORS(app)
@@ -349,7 +342,7 @@ def get_graph():
     ax.plot(range(len(df)), df['accuracy'], marker='o', linestyle='-', linewidth=2)
     ax.set_xticks(list(range(len(df))))
     ax.set_xticklabels(df['timestamp'], rotation=30, ha='right')
-    ax.set_title(f"Progress ({exam_type})")
+    ax.set_title("Progress")
     ax.set_ylabel("Accuracy (%)")
     ax.set_ylim(-5, 105)
     ax.grid(True, alpha=0.3)
