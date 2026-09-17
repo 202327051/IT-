@@ -111,21 +111,22 @@ def init_database():
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
+        
+        # session_stats テーブル作成
         conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp TEXT, accuracy REAL, exam_type TEXT)")
+        
+        # 既存DBへの exam_type カラム自動追加（マイグレーション対応）
+        try:
+            conn.execute("ALTER TABLE session_stats ADD COLUMN exam_type TEXT")
+        except sqlite3.OperationalError:
+            pass
+
         conn.execute("""
         CREATE TABLE IF NOT EXISTS questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, exam_type TEXT, ジャンル TEXT, 問題文 TEXT,
             ア TEXT, イ TEXT, ウ TEXT, エ TEXT, 正解 TEXT, 解説 TEXT, 必須キーワード TEXT, 模範解答 TEXT, mode TEXT
         )
         """)
-        
-        # 既存の session_stats テーブルに exam_type カラムが無い場合の自動追加処理
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(session_stats)")
-        columns = [col[1] for col in cursor.fetchall()]
-        if "exam_type" not in columns:
-            cursor.execute("ALTER TABLE session_stats ADD COLUMN exam_type TEXT")
-        
         conn.commit()
 
     official_files = glob.glob(os.path.join(OFFICIAL_DIR, "*.csv"))
@@ -155,7 +156,6 @@ def download_template(mode_type):
     df = read_csv_safely(file_path)
     csv_string = df.to_csv(index=False, encoding="utf-8")
     bom_csv_bytes = b'\xef\xbb\xbf' + csv_string.encode('utf-8')
-
     encoded_filename = urllib.parse.quote(filename)
 
     return Response(
@@ -314,7 +314,7 @@ def check_answer():
 def get_final_stats():
     data = request.json
     session_id = data.get("session_id")
-    exam_type = data.get("exam_type", "")
+    exam_type = data.get("exam_type")
 
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
         row = conn.execute("SELECT SUM(得点), SUM(満点) FROM history WHERE user_id = ? AND session_id = ? AND mode = '1'", (current_user.id, session_id)).fetchone()
@@ -331,16 +331,12 @@ def get_final_stats():
     backup_and_restore_db()
     return jsonify({"total_rate": round(total_rate, 1), "total_score": total_score, "total_max": total_max, "genre_stats": df_genre.to_dict(orient='records')})
 
-@app.route('/get_graph')
+@app.route('/get_graph', methods=['POST'])
 @login_required
 def get_graph():
-    exam_type = request.args.get("exam_type")
-    
+    exam_type = request.json.get("exam_type")
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
-        if exam_type:
-            df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=? AND exam_type=? ORDER BY id ASC", conn, params=(current_user.id, exam_type))
-        else:
-            df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=? ORDER BY id ASC", conn, params=(current_user.id,))
+        df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=? AND exam_type=? ORDER BY id ASC", conn, params=(current_user.id, exam_type))
 
     if df.empty: return jsonify({"error": "データなし"})
 
@@ -348,8 +344,7 @@ def get_graph():
     ax.plot(range(len(df)), df['accuracy'], marker='o', linestyle='-', linewidth=2)
     ax.set_xticks(list(range(len(df))))
     ax.set_xticklabels(df['timestamp'], rotation=30, ha='right')
-    title = f"Progress ({exam_type})" if exam_type else "Progress"
-    ax.set_title(title)
+    ax.set_title(f"Progress ({exam_type})")
     ax.set_ylabel("Accuracy (%)")
     ax.set_ylim(-5, 105)
     ax.grid(True, alpha=0.3)
@@ -365,9 +360,13 @@ def get_graph():
 @app.route('/reset_history', methods=['POST'])
 @login_required
 def reset_history():
+    exam_type = request.json.get("exam_type")
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
-        conn.execute("DELETE FROM history WHERE user_id = ?", (current_user.id,))
-        conn.execute("DELETE FROM session_stats WHERE user_id = ?", (current_user.id,))
+        if exam_type:
+            conn.execute("DELETE FROM session_stats WHERE user_id = ? AND exam_type = ?", (current_user.id, exam_type))
+        else:
+            conn.execute("DELETE FROM history WHERE user_id = ?", (current_user.id,))
+            conn.execute("DELETE FROM session_stats WHERE user_id = ?", (current_user.id,))
         conn.commit()
     backup_and_restore_db()
     return jsonify({"message": "Reset successful"})
