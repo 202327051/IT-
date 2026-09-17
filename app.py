@@ -12,6 +12,7 @@ import os
 import glob
 import shutil
 import urllib.parse
+import re
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -80,14 +81,17 @@ def process_csv_file(file_path, target_user_id, raw_filename):
         with sqlite3.connect(DB_PATH, timeout=30) as conn:
             conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ? AND mode = ?", (target_user_id, exam_name, mode))
             for _, q in df.iterrows():
-                genre, prob = str(q.get("ジャンル", "一般")).strip(), str(q.get("問題文", "")).strip()
+                prob = str(q.get("問題文", "")).strip()
                 if not prob: continue
+                
                 if mode == "1":
+                    genre = str(q.get("ジャンル", "一般")).strip()
                     conn.execute("""
                         INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, ア, イ, ウ, エ, 正解, 解説, mode)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1')
                     """, (target_user_id, exam_name, genre, prob, str(q.get("ア","")), str(q.get("イ","")), str(q.get("ウ","")), str(q.get("エ","")), str(q.get("正解","")).strip(), str(q.get("解説","")).strip()))
                 else:
+                    genre = "記述式"
                     conn.execute("""
                         INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, 必須キーワード, 模範解答, mode)
                         VALUES (?, ?, ?, ?, ?, ?, '2')
@@ -130,7 +134,7 @@ def download_template(mode_type):
         headers = ["ジャンル", "問題文", "ア", "イ", "ウ", "エ", "正解", "解説"]
         filename = "〇〇_選択式.csv"
     else:
-        headers = ["ジャンル", "問題文", "必須キーワード", "模範解答"]
+        headers = ["問題文", "必須キーワード", "模範解答"]
         filename = "〇〇_記述式.csv"
     
     csv_content = "\ufeff" + ",".join(headers) + "\n"
@@ -248,7 +252,8 @@ def get_question():
 
     if not q: return jsonify({"error": "問題がありません"}), 404
 
-    res = {"id": q[0], "genre": f"{q[7]} | {q[1]}", "question": str(q[2])}
+    genre_display = f"{q[7]} | {q[1]}" if mode == "1" else q[7]
+    res = {"id": q[0], "genre": genre_display, "question": str(q[2])}
     if mode == "1": res["choices"] = [f"ア：{q[3]}", f"イ：{q[4]}", f"ウ：{q[5]}", f"エ：{q[6]}"]
     return jsonify(res)
 
@@ -267,8 +272,9 @@ def check_answer():
         score = 1 if is_correct else 0
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        raw_kw = str(q[4]).replace('"', '').replace('「', '').replace('」', '').replace("、", ",")
-        keywords = [k.strip() for k in raw_kw.split(",") if k.strip()]
+        raw_kw = str(q[4]).replace('"', '').replace('「', '').replace('」', '')
+        # 改行(\n, \r), カンマ(,), 読点(、) のいずれかで分割対応
+        keywords = [k.strip() for k in re.split(r'[\n\r,、]+', raw_kw) if k.strip()]
         max_score = len(keywords) if len(keywords) > 0 else 1
         user_norm = normalize_text(user_ans)
         score = len([k for k in keywords if normalize_text(k) in user_norm])
@@ -292,7 +298,6 @@ def get_final_stats():
         total_score, total_max = row[0] or 0, row[1] or 0
         total_rate = (total_score / total_max * 100) if total_max > 0 else 0
 
-        # 選択式の場合のみ成績統計（グラフ用）に記録
         if total_max > 0:
             now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime("%m/%d %H:%M")
             conn.execute("INSERT INTO session_stats (user_id, timestamp, accuracy) VALUES (?, ?, ?)", (current_user.id, now, total_rate))
