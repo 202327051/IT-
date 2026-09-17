@@ -62,6 +62,17 @@ def normalize_choice(text):
     mapping = {"a": "ア", "ａ": "ア", "i": "イ", "ｉ": "イ", "u": "ウ", "ｕ": "ウ", "e": "エ", "ｅ": "エ"}
     return mapping.get(text, text)
 
+def read_csv_safely(file_path):
+    """様々な文字コードを順番に試して堅牢に読み込む"""
+    encodings = ["utf-8-sig", "cp932", "shift_jis", "utf-8"]
+    for enc in encodings:
+        try:
+            return pd.read_csv(file_path, encoding=enc)
+        except (UnicodeDecodeError, Exception):
+            continue
+    # 最悪の場合エラー無視して読み込み
+    return pd.read_csv(file_path, encoding="utf-8", errors="replace")
+
 def process_csv_file(file_path, target_user_id, raw_filename):
     if "_選択式" in raw_filename:
         mode, exam_name = "1", raw_filename.replace("_選択式", "").strip()
@@ -71,11 +82,7 @@ def process_csv_file(file_path, target_user_id, raw_filename):
         return False, "ファイル名に「_選択式」「_記述式」を含めてください"
 
     try:
-        try:
-            df = pd.read_csv(file_path, encoding="utf-8-sig")
-        except:
-            df = pd.read_csv(file_path, encoding="shift-jis")
-
+        df = read_csv_safely(file_path)
         df.columns = [c.strip() for c in df.columns]
 
         with sqlite3.connect(DB_PATH, timeout=30) as conn:
@@ -141,19 +148,22 @@ def download_template(mode_type):
     file_path = target_files[0]
     filename = os.path.basename(file_path)
 
-    # 文字化け防止対策（Excel用にUTF-8 with BOMで変換して読み込み）
-    try:
-        df = pd.read_csv(file_path, encoding="utf-8-sig")
-    except:
-        df = pd.read_csv(file_path, encoding="shift-jis")
+    # 堅牢にCSVを読み込み
+    df = read_csv_safely(file_path)
 
-    output_csv = df.to_csv(index=False, encoding="utf-8-sig")
+    # Excel向けにUTF-8 BOM付きバイナリデータを明示的に生成
+    csv_string = df.to_csv(index=False, encoding="utf-8")
+    bom_csv_bytes = b'\xef\xbb\xbf' + csv_string.encode('utf-8')
+
     encoded_filename = urllib.parse.quote(filename)
 
     return Response(
-        output_csv,
+        bom_csv_bytes,
         mimetype="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "Content-Type": "text/csv; charset=utf-8"
+        }
     )
 
 @app.route('/get_exams', methods=['GET'])
