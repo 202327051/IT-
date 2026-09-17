@@ -13,13 +13,23 @@ import glob
 import shutil
 import urllib.parse
 import re
+import json
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+# Google Gemini API ライブラリ
+from google import genai
+from google.genai import types
+
 app = Flask(__name__, template_folder='templates')
 app.config['SECRET_KEY'] = 'it-pass-key-2026'
 CORS(app)
+
+# --- Gemini APIの初期化 ---
+# ※ 環境変数 "GEMINI_API_KEY" から取得するか、直接キーを入力してください
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
+ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -111,7 +121,6 @@ def init_database():
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
-        
         conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp TEXT, accuracy REAL, exam_type TEXT)")
         
         try:
@@ -289,21 +298,65 @@ def check_answer():
     current_uid = int(current_user.id)
 
     with sqlite3.connect(DB_PATH, timeout=30) as db:
-        q = db.execute("SELECT ジャンル, 正解, 解説, 模範解答, 必須キーワード FROM questions WHERE id = ?", (q_id,)).fetchone()
+        q = db.execute("SELECT ジャンル, 正解, 解説, 模範解答, 必須キーワード, 問題文 FROM questions WHERE id = ?", (q_id,)).fetchone()
 
     res = {"mode": mode}
     if mode == "1":
+        # 選択式（従来通り）
         is_correct = normalize_choice(user_ans) == normalize_choice(q[1])
         score = 1 if is_correct else 0
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        raw_kw = str(q[4]).replace('"', '').replace('「', '').replace('」', '')
-        keywords = [k.strip() for k in re.split(r'[\n\r,、]+', raw_kw) if k.strip()]
-        max_score = len(keywords) if len(keywords) > 0 else 1
-        user_norm = normalize_text(user_ans)
-        score = len([k for k in keywords if normalize_text(k) in user_norm])
-        miss = [k for k in keywords if normalize_text(k) not in user_norm]
-        res.update({"score": score, "max": max_score, "correct": str(q[3]), "keywords": keywords, "miss": miss})
+        # 記述式（Gemini APIによる文脈自動採点）
+        question_text = str(q[5])
+        model_answer = str(q[3])
+        
+        prompt = f"""
+あなたは厳格かつ丁寧な資格試験の採点官です。
+以下の「問題」「模範解答」「受講者の回答」を比較・分析し、受講者の回答を採点してください。
+
+【問題】
+{question_text}
+
+【模範解答】
+{model_answer}
+
+【受講者の回答】
+{user_ans}
+
+【採点ルール】
+1. 満点は10点とします。
+2. キーワードの丸暗記ではなく、模範解答が示す「意味や文脈」を正しく理解できているかを重視してください。
+3. 表記揺れや同義語は正解として扱ってください。
+4. 出力は必ず以下のJSON形式のみで返してください。
+
+JSONフォーマット:
+{{
+  "score": (0から10の整数),
+  "feedback": "(得点の理由、良かった点、不足している要素などの解説メッセージ)"
+}}
+"""
+        try:
+            response = ai_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            ai_res = json.loads(response.text)
+            score = int(ai_res.get("score", 0))
+            feedback = ai_res.get("feedback", "")
+        except Exception as e:
+            score = 0
+            feedback = f"AI採点中にエラーが発生しました（{str(e)}）。模範解答と照らし合わせて確認してください。"
+
+        res.update({
+            "score": score,
+            "max": 10,
+            "correct": model_answer,
+            "feedback": feedback
+        })
 
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
         conn.execute("INSERT INTO history (user_id, 問題ID, ジャンル, 回答, 得点, 満点, mode, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
