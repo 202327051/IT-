@@ -176,6 +176,7 @@ def get_exams():
         if not exam: continue
         if exam not in exam_dict:
             exam_dict[exam] = False
+        # ログインユーザー自身がアップロードした資格の場合、削除権限をTrueにする
         if uid == current_user.id:
             exam_dict[exam] = True
 
@@ -187,10 +188,12 @@ def get_exams():
 def delete_exam():
     exam_type = request.json.get("exam_type")
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        # ユーザー自身の問題データおよび関連する学習履歴を削除
         conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ?", (current_user.id, exam_type))
+        conn.execute("DELETE FROM session_stats WHERE user_id = ? AND exam_type = ?", (current_user.id, exam_type))
         conn.commit()
     backup_and_restore_db()
-    return jsonify({"message": f"「{exam_type}」を削除しました。"})
+    return jsonify({"message": f"「{exam_type}」を正常に削除しました。"})
 
 @app.route('/get_available_modes', methods=['POST'])
 @login_required
