@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory, make_response
+from flask import Flask, request, jsonify, render_template, Response
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -130,11 +130,31 @@ def index():
 @app.route('/download_template/<mode_type>', methods=['GET'])
 @login_required
 def download_template(mode_type):
-    filename = "〇〇_選択式.csv" if mode_type == "1" else "〇〇_記述式.csv"
-    response = make_response(send_from_directory(UPLOAD_DIR, filename, as_attachment=True, download_name=filename))
+    keyword = "選択式" if mode_type == "1" else "記述式"
+    
+    # uploadsフォルダから「選択式」「記述式」を含むCSVを検索
+    target_files = glob.glob(os.path.join(UPLOAD_DIR, f"*{keyword}*.csv"))
+    
+    if not target_files:
+        return f"テンプレートファイル（*{keyword}*.csv）が見つかりません。CSV/uploads/ フォルダを確認してください。", 404
+        
+    file_path = target_files[0]
+    filename = os.path.basename(file_path)
+
+    # 文字化け防止対策（Excel用にUTF-8 with BOMで変換して読み込み）
+    try:
+        df = pd.read_csv(file_path, encoding="utf-8-sig")
+    except:
+        df = pd.read_csv(file_path, encoding="shift-jis")
+
+    output_csv = df.to_csv(index=False, encoding="utf-8-sig")
     encoded_filename = urllib.parse.quote(filename)
-    response.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{encoded_filename}"
-    return response
+
+    return Response(
+        output_csv,
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
+    )
 
 @app.route('/get_exams', methods=['GET'])
 @login_required
