@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, Response
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -130,20 +130,12 @@ def index():
 @app.route('/download_template/<mode_type>', methods=['GET'])
 @login_required
 def download_template(mode_type):
-    if mode_type == "1":
-        headers = ["ジャンル", "問題文", "ア", "イ", "ウ", "エ", "正解", "解説"]
-        filename = "〇〇_選択式.csv"
-    else:
-        headers = ["問題文", "必須キーワード", "模範解答"]
-        filename = "〇〇_記述式.csv"
-    
-    csv_content = "\ufeff" + ",".join(headers) + "\n"
-    encoded_filename = urllib.parse.quote(filename)
-    
-    return Response(
-        csv_content,
-        mimetype="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
+    filename = "〇〇_選択式.csv" if mode_type == "1" else "〇〇_記述式.csv"
+    # CSV/uploads フォルダから指定ファイルをそのままダウンロード配信
+    return send_from_directory(
+        directory=UPLOAD_DIR,
+        path=filename,
+        as_attachment=True
     )
 
 @app.route('/get_exams', methods=['GET'])
@@ -273,7 +265,6 @@ def check_answer():
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
         raw_kw = str(q[4]).replace('"', '').replace('「', '').replace('」', '')
-        # 改行(\n, \r), カンマ(,), 読点(、) のいずれかで分割対応
         keywords = [k.strip() for k in re.split(r'[\n\r,、]+', raw_kw) if k.strip()]
         max_score = len(keywords) if len(keywords) > 0 else 1
         user_norm = normalize_text(user_ans)
