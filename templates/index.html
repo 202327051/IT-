@@ -15,11 +15,39 @@
         .input-area-fixed { background: #f8f8f8; padding: 10px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
         
-        /* 資格ボタンと✕ボタンのグループ */
-        .exam-btn-group { display: inline-flex; align-items: center; border-radius: 20px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
-        .exam-btn-main { background: #007bff; color: white; border: none; padding: 8px 12px 8px 16px; font-weight: bold; cursor: pointer; font-size: 14px; }
-        .exam-btn-del { background: #0056b3; color: #ffbcbc; border: none; padding: 8px 10px 8px 4px; font-weight: bold; cursor: pointer; font-size: 14px; transition: background 0.2s; }
-        .exam-btn-del:hover { background: #dc3545; color: white; }
+        /* 資格選択ボタン（✕統合型） */
+        .exam-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 8px 16px;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+        }
+        .exam-btn .del-x {
+            background: rgba(255, 255, 255, 0.25);
+            color: #fff;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            margin-right: -4px;
+            transition: background 0.2s, color 0.2s;
+        }
+        .exam-btn .del-x:hover {
+            background: #dc3545;
+            color: white;
+        }
 
         .input-bar { display: flex; gap: 8px; }
         input[type="text"], input[type="password"] { flex: 1; border: 1px solid #ccc; padding: 10px 15px; border-radius: 25px; font-size: 16px; outline: none; }
@@ -144,29 +172,25 @@
             if (data.exams && data.exams.length > 0) {
                 addMsg("bot", "勉強したい資格を選んでください。");
                 data.exams.forEach(examObj => {
-                    const group = document.createElement("div");
-                    group.className = "exam-btn-group";
-
-                    const mainBtn = document.createElement("button");
-                    mainBtn.className = "exam-btn-main";
-                    mainBtn.innerText = examObj.name;
-                    mainBtn.onclick = () => selectExamMode(examObj.name);
-                    group.appendChild(mainBtn);
-
-                    // 自身が追加した資格なら「✕」削除ボタンを付与
+                    const btn = document.createElement("button");
+                    btn.className = "exam-btn";
+                    
                     if (examObj.can_delete) {
-                        const delBtn = document.createElement("button");
-                        delBtn.className = "exam-btn-del";
-                        delBtn.innerText = "✕";
-                        delBtn.title = "この資格を削除";
-                        delBtn.onclick = (e) => {
-                            e.stopPropagation();
-                            deleteExam(examObj.name);
+                        btn.innerHTML = `<span>${examObj.name}</span><span class="del-x">✕</span>`;
+                        btn.onclick = (e) => {
+                            if (e.target.classList.contains("del-x")) {
+                                e.stopPropagation();
+                                deleteExam(examObj.name);
+                            } else {
+                                selectExamMode(examObj.name);
+                            }
                         };
-                        group.appendChild(delBtn);
+                    } else {
+                        btn.innerHTML = `<span>${examObj.name}</span>`;
+                        btn.onclick = () => selectExamMode(examObj.name);
                     }
 
-                    selectArea.appendChild(group);
+                    selectArea.appendChild(btn);
                 });
                 selectArea.classList.remove("hidden");
             } else {
