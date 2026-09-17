@@ -17,6 +17,13 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+# --- 日本語文字化け対策 ---
+try:
+    import japanize_matplotlib
+except ImportError:
+    # japanize_matplotlibがない場合のフォールバック設定
+    matplotlib.rcParams['font.family'] = ['sans-serif', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'IPAexGothic', 'TakaoGothic']
+
 app = Flask(__name__, template_folder='templates')
 app.config['SECRET_KEY'] = 'it-pass-key-2026'
 CORS(app)
@@ -112,10 +119,8 @@ def init_database():
         conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
         
-        # session_stats テーブル作成
         conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp TEXT, accuracy REAL, exam_type TEXT)")
         
-        # 既存DBへの exam_type カラム自動追加（マイグレーション対応）
         try:
             conn.execute("ALTER TABLE session_stats ADD COLUMN exam_type TEXT")
         except sqlite3.OperationalError:
