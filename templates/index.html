@@ -2,322 +2,381 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>資格試験対策ボット</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資格学習アプリ</title>
     <style>
-        :root { --bg-color: #7494c0; --bot-bubble: #ffffff; --user-bubble: #85e249; }
-        body, html { height: 100%; margin: 0; font-family: sans-serif; background: var(--bg-color); display: flex; flex-direction: column; }
-        .header { background: #35495e; color: white; padding: 12px; text-align: center; font-weight: bold; font-size: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 10; position: relative; display: flex; justify-content: center; align-items: center; }
-        #chat-box { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px; }
-        .msg { max-width: 80%; padding: 10px 14px; border-radius: 15px; font-size: 15px; line-height: 1.5; word-wrap: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
-        .bot { align-self: flex-start; background: var(--bot-bubble); color: black; border-top-left-radius: 2px; }
-        .user { align-self: flex-end; background: var(--user-bubble); color: black; border-top-right-radius: 2px; }
-        .input-area-fixed { background: #f8f8f8; padding: 10px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
-        .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-        .exam-item { display: flex; align-items: center; gap: 4px; }
-        .input-bar { display: flex; gap: 8px; }
-        input[type="text"], input[type="password"] { flex: 1; border: 1px solid #ccc; padding: 10px 15px; border-radius: 25px; font-size: 16px; outline: none; }
-        button { border: none; border-radius: 20px; padding: 8px 15px; font-weight: bold; cursor: pointer; }
-        .btn-blue { background: #007bff; color: white; }
-        .btn-send { background: #28a745; color: white; }
-        .btn-red { background: #dc3545; color: white; }
-        .btn-gray { background: #6c757d; color: white; }
-        .btn-del { background: #ff4d4d; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; }
-        .choice-btn { background: white; border: 1px solid #007bff; color: #007bff; padding: 8px 20px; }
-        .hidden { display: none !important; }
-        table { width: 100%; border-collapse: collapse; margin-top: 5px; background: white; font-size: 12px; }
-        th, td { border: 1px solid #ddd; padding: 5px; text-align: left; }
-        #auth-screen { flex:1; display:flex; align-items:center; justify-content:center; }
-        #auth-area { padding: 30px; display: flex; flex-direction: column; gap: 15px; background: white; border-radius: 15px; width: 80%; max-width: 300px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-        .upload-zone { background: #e9ecef; padding: 10px; border-radius: 10px; font-size: 12px; text-align: center; border: 1px dashed #6c757d; width: 90%; }
-        .tmpl-link { margin: 0 3px; color: #007bff; text-decoration: underline; cursor: pointer; font-weight: bold; }
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .card { border: 1px solid #ccc; padding: 15px; border-radius: 5px; margin-bottom: 15px; }
+        .hidden { display: none; }
+        button { margin: 5px; padding: 8px 15px; cursor: pointer; }
+        input[type="text"], input[type="password"] { padding: 8px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+        .choice-btn { display: block; width: 100%; text-align: left; margin: 5px 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
     </style>
 </head>
 <body>
-    <div class="header">
-        資格試験対策チャットボット
-        <button id="logout-btn" onclick="logout()" class="btn-red hidden" style="position:absolute; right:10px; font-size:10px; padding:5px 10px;">ログアウト</button>
-    </div>
-    <div id="auth-screen">
-        <div id="auth-area">
-            <h3 style="text-align:center; margin:0;">ログイン / 新規登録</h3>
-            <input type="text" id="username" placeholder="ユーザー名">
-            <input type="password" id="password" placeholder="パスワード">
-            <button onclick="auth('login')" class="btn-blue">ログイン</button>
-            <button onclick="auth('register')" class="btn-gray">新規登録</button>
-        </div>
-    </div>
-    <div id="chat-screen" class="hidden" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
-        <div id="chat-box"></div>
-        <div class="input-area-fixed">
-            <div id="upload-area" class="controls hidden">
-                <div class="upload-zone">
-                    <div style="margin-bottom: 8px;">
-                        【入力テンプレート】
-                        <span class="tmpl-link" onclick="location.href='/download_template/1'">選択式</span> | 
-                        <span class="tmpl-link" onclick="location.href='/download_template/2'">記述式</span>
-                    </div>
-                    <hr style="border:0; border-top:1px solid #ccc; margin:8px 0;">
-                    問題CSVを選択: <input type="file" id="csv-file" accept=".csv" style="font-size:11px;">
-                    <button onclick="uploadCSV()" class="btn-send" style="padding:4px 10px; font-size:11px;">登録</button>
-                    <div style="font-size:10px; color:#555; margin-top:4px;">※ファイル名は「〇〇_選択式.csv」「〇〇_記述式.csv」にしてください</div>
-                </div>
-            </div>
-            <div id="exam-select" class="controls hidden"></div>
-            <div id="mode-select" class="controls hidden">
-                <button onclick="startApp('1')" id="mode1-btn" class="btn-blue hidden">選択式モード</button>
-                <button onclick="startApp('2')" id="mode2-btn" class="btn-blue hidden">記述式モード</button>
-                <button onclick="backToTop()" class="btn-gray">戻る（資格一覧へ）</button>
-            </div>
-            <div id="choice-area" class="controls hidden">
-                <button class="choice-btn" onclick="handleAnswer('ア')">ア</button>
-                <button class="choice-btn" onclick="handleAnswer('イ')">イ</button>
-                <button class="choice-btn" onclick="handleAnswer('ウ')">ウ</button>
-                <button class="choice-btn" onclick="handleAnswer('エ')">エ</button>
-            </div>
-            <div id="next-area" class="controls hidden">
-                <button onclick="loadQuestion()" class="btn-blue">次の問題へ</button>
-                <button id="finish-btn" onclick="finishApp()" class="btn-red hidden">終了・集計</button>
-                <button id="exit-btn" onclick="backToTop()" class="btn-gray hidden">トップへ戻る</button>
-            </div>
-            <div id="menu-area" class="controls hidden">
-                <button onclick="startApp(mode)" class="btn-blue">もう一度解く</button>
-                <button id="graph-btn" onclick="showGraph()" class="btn-blue hidden">成績グラフ</button>
-                <button onclick="backToTop()" class="btn-gray">資格を選び直す</button>
-            </div>
-            <div id="graph-menu" class="controls hidden">
-                <button onclick="confirmReset()" class="btn-red">履歴リセット</button>
-                <button onclick="backToTop()" class="btn-gray">戻る</button>
-            </div>
-            <div class="input-bar">
-                <input type="text" id="user-input" placeholder="答えを入力..." onkeypress="if(event.keyCode==13) sendMessage()">
-                <button onclick="sendMessage()" class="btn-send">送信</button>
-            </div>
-        </div>
-    </div>
-    <script>
-        let mode = "", qId = null, qCount = 0, isWaitingForAnswer = false, sessionId = "", selectedExam = "";
 
-        async function auth(type) {
+    <h1>資格試験学習システム</h1>
+
+    <!-- ログイン・会員登録エリア -->
+    <div id="auth-section" class="card">
+        <h2>ログイン / ユーザー登録</h2>
+        <input type="text" id="username" placeholder="ユーザー名">
+        <input type="password" id="password" placeholder="パスワード">
+        <button onclick="login()">ログイン</button>
+        <button onclick="register()">新規登録</button>
+        <p id="auth-msg" style="color: red;"></p>
+    </div>
+
+    <!-- メイン操作エリア（ログイン後表示） -->
+    <div id="main-section" class="card hidden">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span id="user-display"></span>
+            <button onclick="logout()">ログアウト</button>
+        </div>
+        <hr>
+
+        <!-- 試験選択 -->
+        <h3>1. 試験・資格の選択</h3>
+        <div id="exam-list"></div>
+
+        <!-- モード選択（選択式 / 記述式） -->
+        <div id="mode-section" class="hidden">
+            <h3>2. 学習モード選択</h3>
+            <div id="mode-list"></div>
+        </div>
+
+        <!-- 問題解答エリア -->
+        <div id="quiz-section" class="hidden" style="margin-top: 20px;">
+            <hr>
+            <h3 id="quiz-genre"></h3>
+            <p id="quiz-question" style="font-size: 1.1em; font-weight: bold;"></p>
+            
+            <div id="choices-area"></div>
+            
+            <div id="descriptive-area" class="hidden">
+                <textarea id="descriptive-answer" rows="4" style="width: 100%;" placeholder="解答を入力してください"></textarea>
+                <br>
+                <button onclick="submitDescriptiveAnswer()">回答を送信</button>
+            </div>
+
+            <!-- 解答結果・解説エリア -->
+            <div id="result-area" class="hidden" style="margin-top: 15px; background: #f9f9f9; padding: 10px; border-radius: 5px;">
+                <h4 id="result-judge"></h4>
+                <p id="result-correct"></p>
+                <p id="result-explanation"></p>
+                <button onclick="nextQuestion()">次の問題へ</button>
+                <button onclick="finishSession()">学習を終了して結果を見る</button>
+            </div>
+        </div>
+
+        <!-- 最終結果 ＆ グラフ表示エリア -->
+        <div id="stats-section" class="hidden" style="margin-top: 20px;">
+            <hr>
+            <h2>今回の学習結果</h2>
+            <p id="stats-summary" style="font-size: 1.2em; font-weight: bold;"></p>
+            
+            <div id="genre-stats-table"></div>
+
+            <h3>資格別 成績推移グラフ</h3>
+            <div id="graph-area">
+                <img id="graph-img" src="" alt="成績グラフ" style="max-width: 100%; display: none;">
+                <p id="graph-msg"></p>
+            </div>
+            
+            <button onclick="restart()">トップに戻る</button>
+        </div>
+
+        <!-- ファイルアップロード ＆ テンプレート管理 -->
+        <hr style="margin-top: 30px;">
+        <h3>CSV問題データの管理</h3>
+        <input type="file" id="csv-file" accept=".csv">
+        <button onclick="uploadCSV()">CSVをアップロードして登録</button>
+        
+        <p style="margin-top: 10px;">
+            <strong>テンプレートダウンロード:</strong>
+            <button onclick="downloadTemplate('1')">選択式テンプレート</button>
+            <button onclick="downloadTemplate('2')">記述式テンプレート</button>
+        </p>
+    </div>
+
+    <script>
+        let currentMode = "1";
+        let selectedExam = "";
+        let currentQuestionId = null;
+        let sessionId = "";
+
+        function generateSessionId() {
+            return 'session_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        async function register() {
             const u = document.getElementById("username").value;
             const p = document.getElementById("password").value;
-            if(!u || !p) return alert("入力してください");
-            const res = await fetch('/' + type, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+            const res = await fetch("/register", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({username: u, password: p})
             });
             const data = await res.json();
-            if(res.ok) {
-                if(type === 'register') return auth('login');
-                document.getElementById("auth-screen").classList.add("hidden");
-                document.getElementById("chat-screen").classList.remove("hidden");
-                document.getElementById("logout-btn").classList.remove("hidden");
-                initChat();
-            } else { alert(data.error); }
+            document.getElementById("auth-msg").innerText = data.message || data.error;
         }
 
-        async function logout() { await fetch('/logout'); location.reload(); }
-
-        function addMsg(sender, text) {
-            const box = document.getElementById("chat-box");
-            const div = document.createElement("div");
-            div.className = `msg ${sender}`;
-            div.innerHTML = text;
-            box.appendChild(div);
-            box.scrollTop = box.scrollHeight;
-        }
-
-        async function initChat() {
-            isWaitingForAnswer = false;
-            hideAllControls();
-            document.getElementById("upload-area").classList.remove("hidden");
-            const res = await fetch('/get_exams');
+        async function login() {
+            const u = document.getElementById("username").value;
+            const p = document.getElementById("password").value;
+            const res = await fetch("/login", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({username: u, password: p})
+            });
             const data = await res.json();
-            const selectArea = document.getElementById("exam-select");
-            selectArea.innerHTML = "";
-            if (data.exams && data.exams.length > 0) {
-                addMsg("bot", "勉強したい資格を選んでください。（新しい問題CSVをアップロードすることも可能です）");
-                data.exams.forEach(examObj => {
-                    const item = document.createElement("div");
-                    item.className = "exam-item";
-                    
-                    const btn = document.createElement("button");
-                    btn.className = "btn-blue";
-                    btn.innerText = examObj.name;
-                    btn.onclick = () => selectExamMode(examObj.name);
-                    item.appendChild(btn);
-
-                    if (examObj.can_delete) {
-                        const delBtn = document.createElement("button");
-                        delBtn.className = "btn-del";
-                        delBtn.innerText = "削除";
-                        delBtn.onclick = (e) => {
-                            e.stopPropagation();
-                            deleteExam(examObj.name);
-                        };
-                        item.appendChild(delBtn);
-                    }
-
-                    selectArea.appendChild(item);
-                });
-                selectArea.classList.remove("hidden");
+            if (res.ok) {
+                document.getElementById("auth-section").classList.add("hidden");
+                document.getElementById("main-section").classList.remove("hidden");
+                document.getElementById("user-display").innerText = `ログイン中: ${u} 様`;
+                loadExams();
             } else {
-                addMsg("bot", "まだ問題が登録されていません。上のテンプレートリンクからファイルをダウンロードし、編集してアップロードしてください！");
+                document.getElementById("auth-msg").innerText = data.error;
             }
+        }
+
+        async function logout() {
+            await fetch("/logout");
+            location.reload();
+        }
+
+        async function loadExams() {
+            const res = await fetch("/get_exams");
+            const data = await res.json();
+            const container = document.getElementById("exam-list");
+            container.innerHTML = "";
+
+            data.exams.forEach(item => {
+                const btn = document.createElement("button");
+                btn.innerText = item.name;
+                btn.onclick = () => selectExam(item.name);
+                container.appendChild(btn);
+
+                if (item.can_delete) {
+                    const delBtn = document.createElement("button");
+                    delBtn.innerText = "削除";
+                    delBtn.style.color = "red";
+                    delBtn.onclick = () => deleteExam(item.name);
+                    container.appendChild(delBtn);
+                }
+            });
         }
 
         async function deleteExam(examName) {
-            if (confirm(`本当に「${examName}」の問題データを削除しますか？`)) {
-                const res = await fetch('/delete_exam', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({exam_type: examName})
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    alert(data.message);
-                    document.getElementById("chat-box").innerHTML = "";
-                    initChat();
-                } else {
-                    alert("削除に失敗しました");
-                }
+            if (!confirm(`「${examName}」の問題データを削除しますか？`)) return;
+            await fetch("/delete_exam", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({exam_type: examName})
+            });
+            loadExams();
+        }
+
+        async function selectExam(examName) {
+            selectedExam = examName;
+            sessionId = generateSessionId();
+
+            const res = await fetch("/get_available_modes", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({exam_type: selectedExam})
+            });
+            const data = await res.json();
+
+            const container = document.getElementById("mode-list");
+            container.innerHTML = "";
+            data.modes.forEach(mode => {
+                const btn = document.createElement("button");
+                btn.innerText = mode === "1" ? "選択式問題" : "記述式問題";
+                btn.onclick = () => startQuiz(mode);
+                container.appendChild(btn);
+            });
+
+            document.getElementById("mode-section").classList.remove("hidden");
+            document.getElementById("quiz-section").classList.add("hidden");
+            document.getElementById("stats-section").classList.add("hidden");
+        }
+
+        function startQuiz(mode) {
+            currentMode = mode;
+            document.getElementById("quiz-section").classList.remove("hidden");
+            document.getElementById("stats-section").classList.add("hidden");
+            nextQuestion();
+        }
+
+        async function nextQuestion() {
+            document.getElementById("result-area").classList.add("hidden");
+            document.getElementById("descriptive-answer").value = "";
+
+            const res = await fetch("/get_question", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({mode: currentMode, exam_type: selectedExam, session_id: sessionId})
+            });
+
+            if (!res.ok) {
+                alert("該当する問題がありません、または全て回答完了しました。");
+                finishSession();
+                return;
             }
+
+            const data = await res.json();
+            currentQuestionId = data.id;
+            document.getElementById("quiz-genre").innerText = data.genre;
+            document.getElementById("quiz-question").innerText = data.question;
+
+            const choicesArea = document.getElementById("choices-area");
+            const descArea = document.getElementById("descriptive-area");
+            choicesArea.innerHTML = "";
+
+            if (currentMode === "1") {
+                choicesArea.classList.remove("hidden");
+                descArea.classList.add("hidden");
+
+                data.choices.forEach(choice => {
+                    const btn = document.createElement("button");
+                    btn.className = "choice-btn";
+                    btn.innerText = choice;
+                    btn.onclick = () => submitAnswer(choice.charAt(0));
+                    choicesArea.appendChild(btn);
+                });
+            } else {
+                choicesArea.classList.add("hidden");
+                descArea.classList.remove("hidden");
+            }
+        }
+
+        async function submitAnswer(userAns) {
+            const res = await fetch("/check_answer", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    mode: currentMode,
+                    id: currentQuestionId,
+                    answer: userAns,
+                    session_id: sessionId
+                })
+            });
+            const data = await res.json();
+            showResult(data);
+        }
+
+        function submitDescriptiveAnswer() {
+            const ans = document.getElementById("descriptive-answer").value;
+            if (!ans.trim()) return alert("解答を入力してください");
+            submitAnswer(ans);
+        }
+
+        function showResult(data) {
+            document.getElementById("result-area").classList.remove("hidden");
+            const judgeElem = document.getElementById("result-judge");
+            const correctElem = document.getElementById("result-correct");
+            const expElem = document.getElementById("result-explanation");
+
+            if (data.mode === "1") {
+                judgeElem.innerText = data.score > 0 ? "⭕️ 正解！" : "❌ 不正解...";
+                judgeElem.style.color = data.score > 0 ? "green" : "red";
+                correctElem.innerText = `正解: ${data.correct}`;
+                expElem.innerText = `解説: ${data.explanation}`;
+            } else {
+                judgeElem.innerText = `得点: ${data.score} / ${data.max}`;
+                judgeElem.style.color = data.score === data.max ? "green" : "orange";
+                correctElem.innerText = `模範解答: ${data.correct}`;
+                expElem.innerText = `必須キーワード: ${data.keywords.join(", ")} (不足: ${data.miss.join(", ") || "なし"})`;
+            }
+        }
+
+        async function finishSession() {
+            document.getElementById("quiz-section").classList.add("hidden");
+            document.getElementById("stats-section").classList.remove("hidden");
+
+            // 1. 最終結果の取得（選択中の試験種別 exam_type も一緒に送信）
+            const res = await fetch("/get_final_stats", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    exam_type: selectedExam
+                })
+            });
+            const data = await res.json();
+
+            document.getElementById("stats-summary").innerText = 
+                `正解率: ${data.total_rate}% (${data.total_score} / ${data.total_max} 点)`;
+
+            // ジャンル別成績テーブル表示
+            const tableDiv = document.getElementById("genre-stats-table");
+            if (data.genre_stats && data.genre_stats.length > 0) {
+                let html = "<table><tr><th>ジャンル</th><th>正解数/問題数</th><th>正解率</th></tr>";
+                data.genre_stats.forEach(g => {
+                    html += `<tr><td>${g.ジャンル}</td><td>${g.s} / ${g.m}</td><td>${g.rate}%</td></tr>`;
+                });
+                html += "</table>";
+                tableDiv.innerHTML = html;
+            } else {
+                tableDiv.innerHTML = "";
+            }
+
+            // 2. 資格別の成績グラフを取得・表示
+            loadGraph();
+        }
+
+        async function loadGraph() {
+            // 選択中の試験種別（selectedExam）をクエリパラメータに付与
+            const res = await fetch(`/get_graph?exam_type=${encodeURIComponent(selectedExam)}`);
+            const data = await res.json();
+
+            const img = document.getElementById("graph-img");
+            const msg = document.getElementById("graph-msg");
+
+            if (data.plot) {
+                img.src = "data:image/png;base64," + data.plot;
+                img.style.display = "block";
+                msg.innerText = "";
+            } else {
+                img.style.display = "none";
+                msg.innerText = data.error || "グラフのデータがありません。";
+            }
+        }
+
+        function restart() {
+            document.getElementById("stats-section").classList.add("hidden");
+            document.getElementById("mode-section").classList.add("hidden");
+            loadExams();
         }
 
         async function uploadCSV() {
             const fileInput = document.getElementById("csv-file");
-            if (fileInput.files.length === 0) return alert("ファイルを選択してください");
+            if (!fileInput.files[0]) return alert("ファイルを選択してください");
+
             const formData = new FormData();
             formData.append("file", fileInput.files[0]);
-            const res = await fetch('/upload_csv', { method: 'POST', body: formData });
+
+            const res = await fetch("/upload_csv", {
+                method: "POST",
+                body: formData
+            });
             const data = await res.json();
+
             if (res.ok) {
                 alert(data.message);
                 fileInput.value = "";
-                document.getElementById("chat-box").innerHTML = "";
-                initChat();
-            } else { alert(data.error); }
-        }
-
-        async function selectExamMode(exam) {
-            selectedExam = exam;
-            addMsg("user", `${exam} を勉強します`);
-            hideAllControls();
-            
-            const res = await fetch('/get_available_modes', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({exam_type: exam})
-            });
-            const data = await res.json();
-
-            addMsg("bot", `「${exam}」ですね。学習モードを選んでください。`);
-            document.getElementById("mode-select").classList.remove("hidden");
-            
-            if (data.modes.includes("1")) {
-                document.getElementById("mode1-btn").classList.remove("hidden");
-            }
-            if (data.modes.includes("2")) {
-                document.getElementById("mode2-btn").classList.remove("hidden");
-            }
-        }
-
-        function sendMessage() {
-            const el = document.getElementById("user-input");
-            const val = el.value.trim();
-            if(!val || !isWaitingForAnswer) return;
-            handleAnswer(val); el.value = "";
-        }
-
-        function startApp(m) {
-            mode = m; qCount = 0; sessionId = Date.now().toString(); hideAllControls();
-            addMsg("bot", `<b>--- ${selectedExam} の ${m === "1" ? "選択式モード" : "記述式モード"} を開始 ---</b>`);
-            loadQuestion();
-        }
-
-        async function loadQuestion() {
-            qCount++; hideAllControls();
-            const res = await fetch('/get_question', { 
-                method: 'POST', 
-                headers: {'Content-Type': 'application/json'}, 
-                body: JSON.stringify({mode: mode, exam_type: selectedExam, session_id: sessionId}) 
-            });
-            const data = await res.json();
-            if (!res.ok || data.error || !data.question) {
-                addMsg("bot", `<span style="color:red">⚠️「${selectedExam}」には対象モードの問題データがありません。</span>`);
-                backToTop();
-                return;
-            }
-            qId = data.id; isWaitingForAnswer = true;
-            let text = `<b>Q${qCount}</b> [${data.genre}]<br>${data.question}`;
-            if(data.choices) {
-                text += `<br><br>【選択肢】<br>${data.choices.join("<br>")}`;
-                document.getElementById("choice-area").classList.remove("hidden");
-            }
-            addMsg("bot", text);
-            document.getElementById("user-input").focus();
-        }
-
-        async function handleAnswer(val) {
-            isWaitingForAnswer = false; addMsg("user", val); hideAllControls();
-            const res = await fetch('/check_answer', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode: mode, id: qId, answer: val, session_id: sessionId}) });
-            const data = await res.json();
-            let fb = "";
-            if (mode === "1") {
-                fb = `<b>${data.score ? "⭕ 正解！" : "❌ 不正解..." }</b><br>正解: ${data.correct}<br><br>【解説】<br>${data.explanation}`;
-                document.getElementById("finish-btn").classList.remove("hidden");
+                loadExams();
             } else {
-                fb = `<b>採点結果</b><br>得点: ${data.score} / ${data.max}<br>必須キーワード: ${data.keywords.join(", ")}<br>`;
-                fb += (data.miss && data.miss.length > 0) ? `<span style="color:red">不足: ${data.miss.join(", ")}</span><br>` : `<span style="color:blue">✨キーワードをすべて網羅しています！</span><br>`;
-                fb += `<br><b>【模範解答】</b><br>${data.correct}`;
-                document.getElementById("exit-btn").classList.remove("hidden");
+                alert(data.error);
             }
-            addMsg("bot", fb.replace(/\n/g, "<br>"));
-            document.getElementById("next-area").classList.remove("hidden");
         }
 
-        async function finishApp() {
-            hideAllControls();
-            const res = await fetch('/get_final_stats', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({session_id: sessionId}) });
-            const data = await res.json();
-            let html = `<b>学習結果</b>: ${data.total_rate}% (${data.total_score}/${data.total_max})<br><table><tr><th>ジャンル</th><th>正答率</th></tr>`;
-            data.genre_stats.forEach(s => html += `<tr><td>${s.ジャンル}</td><td>${s.rate}%</td></tr>`);
-            addMsg("bot", html + "</table><br>次はどうしますか？");
-            
-            if (mode === "1") {
-                document.getElementById("graph-btn").classList.remove("hidden");
-            }
-            document.getElementById("menu-area").classList.remove("hidden");
-        }
-
-        async function showGraph() {
-            hideAllControls();
-            const res = await fetch('/get_graph');
-            const data = await res.json();
-            if(data.error) return addMsg("bot", "まだグラフを表示するデータがありません。");
-            addMsg("bot", `<b>成績推移グラフ</b><br><img src="data:image/png;base64,${data.plot}" style="width:100%; border-radius:10px;">`);
-            document.getElementById("graph-menu").classList.remove("hidden");
-        }
-
-        function backToTop() { hideAllControls(); initChat(); }
-
-        function hideAllControls() {
-            ["upload-area", "exam-select", "mode-select", "choice-area", "next-area", "menu-area", "graph-menu"].forEach(id => {
-                const target = document.getElementById(id); if(target) target.classList.add("hidden");
-            });
-            ["mode1-btn", "mode2-btn", "finish-btn", "exit-btn", "graph-btn"].forEach(id => {
-                const target = document.getElementById(id); if(target) target.classList.add("hidden");
-            });
-        }
-
-        async function confirmReset() {
-            if(confirm("全ての履歴をリセットしてもよろしいですか？")) {
-                await fetch('/reset_history', {method: 'POST'});
-                document.getElementById("chat-box").innerHTML = "";
-                backToTop();
-                addMsg("bot", "履歴をリセットしました。");
-            }
+        function downloadTemplate(modeType) {
+            window.location.href = `/download_template/${modeType}`;
         }
     </script>
 </body>
