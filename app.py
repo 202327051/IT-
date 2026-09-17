@@ -168,15 +168,16 @@ def download_template(mode_type):
 @app.route('/get_exams', methods=['GET'])
 @login_required
 def get_exams():
+    current_uid = int(current_user.id)
     with sqlite3.connect(DB_PATH, timeout=30) as db:
-        rows = db.execute("SELECT DISTINCT exam_type, user_id FROM questions WHERE user_id = ? OR user_id = 0", (current_user.id,)).fetchall()
+        rows = db.execute("SELECT DISTINCT exam_type, user_id FROM questions WHERE user_id = ? OR user_id = 0", (current_uid,)).fetchall()
     
     exam_dict = {}
     for exam, uid in rows:
         if not exam: continue
         if exam not in exam_dict:
             exam_dict[exam] = False
-        if uid == current_user.id:
+        if int(uid) == current_uid:
             exam_dict[exam] = True
 
     exams_list = [{"name": k, "can_delete": v} for k, v in exam_dict.items()]
@@ -186,9 +187,10 @@ def get_exams():
 @login_required
 def delete_exam():
     exam_type = request.json.get("exam_type")
+    current_uid = int(current_user.id)
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
-        conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ?", (current_user.id, exam_type))
-        conn.execute("DELETE FROM session_stats WHERE user_id = ? AND exam_type = ?", (current_user.id, exam_type))
+        conn.execute("DELETE FROM questions WHERE user_id = ? AND exam_type = ?", (current_uid, exam_type))
+        conn.execute("DELETE FROM session_stats WHERE user_id = ? AND exam_type = ?", (current_uid, exam_type))
         conn.commit()
     backup_and_restore_db()
     return jsonify({"message": f"「{exam_type}」を削除しました。"})
@@ -198,7 +200,7 @@ def delete_exam():
 def get_available_modes():
     exam_type = request.json.get("exam_type")
     with sqlite3.connect(DB_PATH, timeout=30) as db:
-        modes = db.execute("SELECT DISTINCT mode FROM questions WHERE (user_id = ? OR user_id = 0) AND exam_type = ?", (current_user.id, exam_type)).fetchall()
+        modes = db.execute("SELECT DISTINCT mode FROM questions WHERE (user_id = ? OR user_id = 0) AND exam_type = ?", (int(current_user.id), exam_type)).fetchall()
     return jsonify({"modes": [m[0] for m in modes if m[0]]})
 
 @app.route('/upload_csv', methods=['POST'])
@@ -211,11 +213,12 @@ def upload_csv():
     original_filename = file.filename
     raw_filename = os.path.splitext(original_filename)[0]
 
-    safe_save_name = f"upload_{current_user.id}_{int(datetime.datetime.now().timestamp())}.csv"
+    current_uid = int(current_user.id)
+    safe_save_name = f"upload_{current_uid}_{int(datetime.datetime.now().timestamp())}.csv"
     file_path = os.path.join(UPLOAD_DIR, safe_save_name)
     file.save(file_path)
 
-    success, result = process_csv_file(file_path, current_user.id, raw_filename)
+    success, result = process_csv_file(file_path, current_uid, raw_filename)
     if success:
         backup_and_restore_db()
         return jsonify({"message": f"「{result}」を正常に登録しました！"})
@@ -254,6 +257,7 @@ def logout():
 def get_question():
     data = request.json
     mode, selected_exam, session_id = str(data.get("mode")), data.get("exam_type"), data.get("session_id")
+    current_uid = int(current_user.id)
 
     with sqlite3.connect(DB_PATH, timeout=30) as db:
         q = db.execute("""
@@ -261,14 +265,14 @@ def get_question():
             WHERE (user_id = ? OR user_id = 0) AND mode = ? AND exam_type = ?
             AND id NOT IN (SELECT 問題ID FROM history WHERE user_id = ? AND session_id = ? AND mode = ?)
             ORDER BY user_id DESC, RANDOM() LIMIT 1
-        """, (current_user.id, mode, selected_exam, current_user.id, session_id, mode)).fetchone()
+        """, (current_uid, mode, selected_exam, current_uid, session_id, mode)).fetchone()
         
         if not q:
             q = db.execute("""
                 SELECT id, ジャンル, 問題文, ア, イ, ウ, エ, exam_type FROM questions 
                 WHERE (user_id = ? OR user_id = 0) AND mode = ? AND exam_type = ? 
                 ORDER BY user_id DESC, RANDOM() LIMIT 1
-            """, (current_user.id, mode, selected_exam)).fetchone()
+            """, (current_uid, mode, selected_exam)).fetchone()
 
     if not q: return jsonify({"error": "問題がありません"}), 404
 
@@ -282,6 +286,7 @@ def get_question():
 def check_answer():
     data = request.json
     mode, q_id, user_ans, session_id = str(data.get("mode")), data.get("id"), data.get("answer"), data.get("session_id")
+    current_uid = int(current_user.id)
 
     with sqlite3.connect(DB_PATH, timeout=30) as db:
         q = db.execute("SELECT ジャンル, 正解, 解説, 模範解答, 必須キーワード FROM questions WHERE id = ?", (q_id,)).fetchone()
@@ -302,7 +307,7 @@ def check_answer():
 
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
         conn.execute("INSERT INTO history (user_id, 問題ID, ジャンル, 回答, 得点, 満点, mode, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                     (current_user.id, q_id, q[0], str(user_ans), score, res["max"], mode, session_id))
+                     (current_uid, q_id, q[0], str(user_ans), score, res["max"], mode, session_id))
         conn.commit()
 
     backup_and_restore_db()
@@ -314,18 +319,19 @@ def get_final_stats():
     data = request.json
     session_id = data.get("session_id")
     exam_type = data.get("exam_type")
+    current_uid = int(current_user.id)
 
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
-        row = conn.execute("SELECT SUM(得点), SUM(満点) FROM history WHERE user_id = ? AND session_id = ? AND mode = '1'", (current_user.id, session_id)).fetchone()
+        row = conn.execute("SELECT SUM(得点), SUM(満点) FROM history WHERE user_id = ? AND session_id = ? AND mode = '1'", (current_uid, session_id)).fetchone()
         total_score, total_max = row[0] or 0, row[1] or 0
         total_rate = (total_score / total_max * 100) if total_max > 0 else 0
 
         if total_max > 0:
             now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime("%m/%d %H:%M")
-            conn.execute("INSERT INTO session_stats (user_id, timestamp, accuracy, exam_type) VALUES (?, ?, ?, ?)", (current_user.id, now, total_rate, exam_type))
+            conn.execute("INSERT INTO session_stats (user_id, timestamp, accuracy, exam_type) VALUES (?, ?, ?, ?)", (current_uid, now, total_rate, exam_type))
             conn.commit()
 
-        df_genre = pd.read_sql_query("SELECT ジャンル, SUM(得点) AS s, SUM(満点) AS m, ROUND(SUM(得点)*100.0/SUM(満点), 1) AS rate FROM history WHERE user_id=? AND session_id=? AND mode='1' GROUP BY ジャンル ORDER BY rate ASC", conn, params=(current_user.id, session_id))
+        df_genre = pd.read_sql_query("SELECT ジャンル, SUM(得点) AS s, SUM(満点) AS m, ROUND(SUM(得点)*100.0/SUM(満点), 1) AS rate FROM history WHERE user_id=? AND session_id=? AND mode='1' GROUP BY ジャンル ORDER BY rate ASC", conn, params=(current_uid, session_id))
 
     backup_and_restore_db()
     return jsonify({"total_rate": round(total_rate, 1), "total_score": total_score, "total_max": total_max, "genre_stats": df_genre.to_dict(orient='records')})
@@ -334,8 +340,9 @@ def get_final_stats():
 @login_required
 def get_graph():
     exam_type = request.json.get("exam_type")
+    current_uid = int(current_user.id)
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
-        df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=? AND exam_type=? ORDER BY id ASC", conn, params=(current_user.id, exam_type))
+        df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=? AND exam_type=? ORDER BY id ASC", conn, params=(current_uid, exam_type))
 
     if df.empty: return jsonify({"error": "データなし"})
 
@@ -360,12 +367,13 @@ def get_graph():
 @login_required
 def reset_history():
     exam_type = request.json.get("exam_type")
+    current_uid = int(current_user.id)
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
         if exam_type:
-            conn.execute("DELETE FROM session_stats WHERE user_id = ? AND exam_type = ?", (current_user.id, exam_type))
+            conn.execute("DELETE FROM session_stats WHERE user_id = ? AND exam_type = ?", (current_uid, exam_type))
         else:
-            conn.execute("DELETE FROM history WHERE user_id = ?", (current_user.id,))
-            conn.execute("DELETE FROM session_stats WHERE user_id = ?", (current_user.id,))
+            conn.execute("DELETE FROM history WHERE user_id = ?", (current_uid,))
+            conn.execute("DELETE FROM session_stats WHERE user_id = ?", (current_uid,))
         conn.commit()
     backup_and_restore_db()
     return jsonify({"message": "Reset successful"})
