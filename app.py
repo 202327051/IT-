@@ -28,7 +28,7 @@ CORS(app)
 
 # --- Gemini APIの初期化 ---
 # ※ 環境変数 "GEMINI_API_KEY" から取得するか、直接キーを入力してください
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 login_manager = LoginManager()
