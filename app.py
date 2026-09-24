@@ -302,12 +302,12 @@ def check_answer():
 
     res = {"mode": mode}
     if mode == "1":
-        # 選択式（従来通り）
+        # 選択式
         is_correct = normalize_choice(user_ans) == normalize_choice(q[1])
         score = 1 if is_correct else 0
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        # 記述式（実在する安定版モデルを指定＋自動フォールバック）
+        # 記述式（堅牢なJSON抽出とクレンジング処理を実装）
         question_text = str(q[5])
         model_answer = str(q[3])
         
@@ -316,12 +316,11 @@ def check_answer():
 [回答]:{user_ans}
 
 意味が合っていれば正解とし、10点満点で採点してJSONのみ出力。
-JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
+JSON形式: {{"score": 整数, "feedback": "解説"}}"""
 
         score = 0
         feedback = ""
         
-        # 実在する公式モデルの優先順リスト
         target_models = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash']
         success = False
 
@@ -336,15 +335,24 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
                         contents=prompt,
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
-                            max_output_tokens=150,
+                            max_output_tokens=200,
                             temperature=0.1
                         )
                     )
-                    ai_res = json.loads(response.text)
-                    score = int(ai_res.get("score", 0))
-                    feedback = ai_res.get("feedback", "")
-                    success = True
-                    break
+                    
+                    raw_text = response.text.strip() if response and response.text else ""
+                    # マークダウンのコードブロック除去
+                    clean_text = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_text, flags=re.IGNORECASE).strip()
+                    
+                    if clean_text:
+                        ai_res = json.loads(clean_text)
+                        score = int(ai_res.get("score", 0))
+                        feedback = ai_res.get("feedback", "採点完了")
+                        success = True
+                        break
+                    else:
+                        raise ValueError("Empty response text")
+
                 except Exception as e:
                     err_msg = str(e)
                     if ("503" in err_msg or "UNAVAILABLE" in err_msg) and attempt < 2:
