@@ -14,6 +14,7 @@ import shutil
 import urllib.parse
 import re
 import json
+import time
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -27,7 +28,6 @@ app.config['SECRET_KEY'] = 'it-pass-key-2026'
 CORS(app)
 
 # --- Gemini APIの初期化 ---
-# ※ 環境変数 "GEMINI_API_KEY" から取得するか、直接キーを入力してください
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -307,49 +307,43 @@ def check_answer():
         score = 1 if is_correct else 0
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        # 記述式（Gemini APIによる文脈自動採点）
+        # 記述式（Gemini APIによる爆速・文脈自動採点）
         question_text = str(q[5])
         model_answer = str(q[3])
         
-        prompt = f"""
-あなたは厳格かつ丁寧な資格試験の採点官です。
-以下の「問題」「模範解答」「受講者の回答」を比較・分析し、受講者の回答を採点してください。
+        # プロンプトを最軽量化
+        prompt = f"""[問題]:{question_text}
+[模範解答]:{model_answer}
+[回答]:{user_ans}
 
-【問題】
-{question_text}
+意味が合っていれば正解とし、10点満点で採点してJSONのみ出力。
+JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
 
-【模範解答】
-{model_answer}
+        score = 0
+        feedback = ""
+        max_retries = 3
 
-【受講者の回答】
-{user_ans}
-
-【採点ルール】
-1. 満点は10点とします。
-2. キーワードの丸暗記ではなく、模範解答が示す「意味や文脈」を正しく理解できているかを重視してください。
-3. 表記揺れや同義語は正解として扱ってください。
-4. 出力は必ず以下のJSON形式のみで返してください。
-
-JSONフォーマット:
-{{
-  "score": (0から10の整数),
-  "feedback": "(得点の理由、良かった点、不足している要素などの解説メッセージ)"
-}}
-"""
-        try:
-            response = ai_client.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
+        # バックオフ（自動再試行）ループで503エラーを回避
+        for attempt in range(max_retries):
+            try:
+                response = ai_client.models.generate_content(
+                    model='gemini-3.6-flash-lite',
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        max_output_tokens=150,
+                        temperature=0.1
+                    )
                 )
-            )
-            ai_res = json.loads(response.text)
-            score = int(ai_res.get("score", 0))
-            feedback = ai_res.get("feedback", "")
-        except Exception as e:
-            score = 0
-            feedback = f"AI採点中にエラーが発生しました（{str(e)}）。模範解答と照らし合わせて確認してください。"
+                ai_res = json.loads(response.text)
+                score = int(ai_res.get("score", 0))
+                feedback = ai_res.get("feedback", "")
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))
+                else:
+                    feedback = f"AI採点エラー: {str(e)}"
 
         res.update({
             "score": score,
