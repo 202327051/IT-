@@ -307,11 +307,10 @@ def check_answer():
         score = 1 if is_correct else 0
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        # 記述式（Gemini APIによる爆速・文脈自動採点）
+        # 記述式（モデル自動フォールバック＋粘り強いリトライ処理付き）
         question_text = str(q[5])
         model_answer = str(q[3])
         
-        # プロンプトを最軽量化
         prompt = f"""[問題]:{question_text}
 [模範解答]:{model_answer}
 [回答]:{user_ans}
@@ -321,29 +320,37 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
 
         score = 0
         feedback = ""
-        max_retries = 3
+        
+        target_models = ['gemini-3.6-flash-lite', 'gemini-3.6-flash']
+        success = False
 
-        # バックオフ（自動再試行）ループで503エラーを回避
-        for attempt in range(max_retries):
-            try:
-                response = ai_client.models.generate_content(
-                    model='gemini-3.6-flash-lite',
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        max_output_tokens=150,
-                        temperature=0.1
-                    )
-                )
-                ai_res = json.loads(response.text)
-                score = int(ai_res.get("score", 0))
-                feedback = ai_res.get("feedback", "")
+        for model_name in target_models:
+            if success:
                 break
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    time.sleep(0.5 * (attempt + 1))
-                else:
-                    feedback = f"AI採点エラー: {str(e)}"
+            
+            for attempt in range(3):
+                try:
+                    response = ai_client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            max_output_tokens=150,
+                            temperature=0.1
+                        )
+                    )
+                    ai_res = json.loads(response.text)
+                    score = int(ai_res.get("score", 0))
+                    feedback = ai_res.get("feedback", "")
+                    success = True
+                    break
+                except Exception as e:
+                    err_msg = str(e)
+                    if ("503" in err_msg or "UNAVAILABLE" in err_msg) and attempt < 2:
+                        time.sleep(1.0 * (attempt + 1))
+                    else:
+                        feedback = f"AI採点エラー: {err_msg}"
+                        break
 
         res.update({
             "score": score,
