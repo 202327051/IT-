@@ -325,7 +325,7 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
         for attempt in range(max_retries):
             try:
                 response = ai_client.models.generate_content(
-                    model='models/gemini-2.5-flash',
+                    model='models/gemini-3.6-flash',
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
