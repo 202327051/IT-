@@ -302,12 +302,12 @@ def check_answer():
 
     res = {"mode": mode}
     if mode == "1":
-        # 選択式
+        # 選択式（従来通り）
         is_correct = normalize_choice(user_ans) == normalize_choice(q[1])
         score = 1 if is_correct else 0
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        # 記述式（堅牢なJSON抽出とクレンジング処理を実装）
+        # 記述式（Gemini APIによる自動リトライ採点）
         question_text = str(q[5])
         model_answer = str(q[3])
         
@@ -316,50 +316,36 @@ def check_answer():
 [回答]:{user_ans}
 
 意味が合っていれば正解とし、10点満点で採点してJSONのみ出力。
-JSON形式: {{"score": 整数, "feedback": "解説"}}"""
+JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
 
         score = 0
         feedback = ""
-        
-        target_models = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash']
-        success = False
+        max_retries = 10  # 503混雑や429制限が出ても成功するまで最大10回試行
 
-        for model_name in target_models:
-            if success:
-                break
-            
-            for attempt in range(3):
-                try:
-                    response = ai_client.models.generate_content(
-                        model=model_name,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            max_output_tokens=200,
-                            temperature=0.1
-                        )
+        for attempt in range(max_retries):
+            try:
+                response = ai_client.models.generate_content(
+                    model='gemini-3.6-flash-lite',
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        max_output_tokens=150,
+                        temperature=0.1
                     )
-                    
-                    raw_text = response.text.strip() if response and response.text else ""
-                    # マークダウンのコードブロック除去
-                    clean_text = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_text, flags=re.IGNORECASE).strip()
-                    
-                    if clean_text:
-                        ai_res = json.loads(clean_text)
-                        score = int(ai_res.get("score", 0))
-                        feedback = ai_res.get("feedback", "採点完了")
-                        success = True
-                        break
-                    else:
-                        raise ValueError("Empty response text")
-
-                except Exception as e:
-                    err_msg = str(e)
-                    if ("503" in err_msg or "UNAVAILABLE" in err_msg) and attempt < 2:
-                        time.sleep(1.0 * (attempt + 1))
-                    else:
-                        feedback = f"AI採点エラー: {err_msg}"
-                        break
+                )
+                ai_res = json.loads(response.text)
+                score = int(ai_res.get("score", 0))
+                feedback = ai_res.get("feedback", "")
+                break  # 採点成功したらループ終了
+            except Exception as e:
+                err_str = str(e)
+                # 503(混雑) または 429(レート制限/一時上限) の場合は待機時間を徐々に伸ばして再試行
+                if ("503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str) and attempt < max_retries - 1:
+                    wait_seconds = min(1.0 * (1.5 ** attempt), 8.0)  # 1s, 1.5s, 2.2s, 3.3s ... (最大8秒)
+                    time.sleep(wait_seconds)
+                else:
+                    feedback = f"AI採点エラー: {err_str}"
+                    break
 
         res.update({
             "score": score,
