@@ -307,7 +307,7 @@ def check_answer():
         score = 1 if is_correct else 0
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        # 記述式（モデル自動フォールバック＋粘り強いリトライ処理付き）
+        # 記述式（実在する安定版モデルを指定＋自動フォールバック）
         question_text = str(q[5])
         model_answer = str(q[3])
         
@@ -321,7 +321,8 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
         score = 0
         feedback = ""
         
-        target_models = ['gemini-3.6-flash-lite', 'gemini-3.6-flash']
+        # 実在する公式モデルの優先順リスト
+        target_models = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash']
         success = False
 
         for model_name in target_models:
