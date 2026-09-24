@@ -307,7 +307,7 @@ def check_answer():
         score = 1 if is_correct else 0
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        # 記述式（Gemini APIによる自動リトライ採点）
+        # 記述式（Gemini 3.6 Flash-Lite による爆速・粘り強い自動リトライ採点）
         question_text = str(q[5])
         model_answer = str(q[3])
         
@@ -320,7 +320,7 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
 
         score = 0
         feedback = ""
-        max_retries = 10  # 503混雑や429制限が出ても成功するまで最大10回試行
+        max_retries = 10  # 503混雑や429制限が出ても成功するまで最大10回裏で自動再試行
 
         for attempt in range(max_retries):
             try:
@@ -339,9 +339,9 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
                 break  # 採点成功したらループ終了
             except Exception as e:
                 err_str = str(e)
-                # 503(混雑) または 429(レート制限/一時上限) の場合は待機時間を徐々に伸ばして再試行
-                if ("503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str) and attempt < max_retries - 1:
-                    wait_seconds = min(1.0 * (1.5 ** attempt), 8.0)  # 1s, 1.5s, 2.2s, 3.3s ... (最大8秒)
+                # 503(混雑) / 429(レート制限) / UNAVAILABLE / NOT_FOUND 等の一時的エラー時は待機時間を徐々に伸ばしてリトライ
+                if ("503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str or "NOT_FOUND" in err_str) and attempt < max_retries - 1:
+                    wait_seconds = min(1.0 * (1.5 ** attempt), 8.0)  # 1s, 1.5s, 2.2s... (最大8秒待機)
                     time.sleep(wait_seconds)
                 else:
                     feedback = f"AI採点エラー: {err_str}"
