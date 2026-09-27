@@ -302,12 +302,10 @@ def check_answer():
 
     res = {"mode": mode}
     if mode == "1":
-        # 選択式（従来通り）
         is_correct = normalize_choice(user_ans) == normalize_choice(q[1])
         score = 1 if is_correct else 0
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        # 記述式（Gemini APIによる自動リトライ採点）
         question_text = str(q[5])
         model_answer = str(q[3])
         
@@ -325,7 +323,7 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
         for attempt in range(max_retries):
             try:
                 response = ai_client.models.generate_content(
-                    model='models/gemini-3.6-flash',
+                    model='gemini-2.5-flash',
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
@@ -335,13 +333,20 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
                 )
                 ai_res = json.loads(response.text)
                 score = int(ai_res.get("score", 0))
-                feedback = ai_res.get("feedback", "")
-                break  # 採点成功したらループ終了
+                feedback = str(ai_res.get("feedback", ""))
+                break  # 正常にパースできたらループ終了
+            except (json.JSONDecodeError, KeyError, ValueError):
+                # AIの返答が一時的に破損していた場合は少し待ってリトライ
+                if attempt < max_retries - 1:
+                    time.sleep(0.5)
+                    continue
+                else:
+                    feedback = "採点結果のフォーマット解析に失敗しました。模範解答を確認してください。"
             except Exception as e:
                 err_str = str(e)
                 # 503(混雑) または 429(レート制限/一時上限) の場合は待機時間を徐々に伸ばして再試行
                 if ("503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str) and attempt < max_retries - 1:
-                    wait_seconds = min(1.0 * (1.5 ** attempt), 8.0)  # 1s, 1.5s, 2.2s, 3.3s ... (最大8秒)
+                    wait_seconds = min(1.0 * (1.5 ** attempt), 8.0)
                     time.sleep(wait_seconds)
                 else:
                     feedback = f"AI採点エラー: {err_str}"
