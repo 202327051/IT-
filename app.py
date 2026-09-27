@@ -264,8 +264,8 @@ def logout():
 @app.route('/get_question', methods=['POST'])
 @login_required
 def get_question():
-    data = request.json
-    mode, selected_exam, session_id = str(data.get("mode")), data.get("exam_type"), data.get("session_id")
+    data = request.json or {}
+    mode, selected_exam, session_id = str(data.get("mode", "")), data.get("exam_type", ""), data.get("session_id", "")
     current_uid = int(current_user.id)
 
     with sqlite3.connect(DB_PATH, timeout=30) as db:
@@ -294,15 +294,21 @@ def get_question():
 @login_required
 def check_answer():
     try:
-        data = request.json
-        mode, q_id, user_ans, session_id = str(data.get("mode")), data.get("id"), data.get("answer"), data.get("session_id")
+        data = request.get_json(silent=True) or {}
+        mode = str(data.get("mode", "1"))
+        q_id = data.get("id")
+        user_ans = str(data.get("answer", ""))
+        session_id = str(data.get("session_id", ""))
         current_uid = int(current_user.id)
+
+        if not q_id:
+            return jsonify({"error": "問題IDが正常に送信されませんでした"}), 400
 
         with sqlite3.connect(DB_PATH, timeout=30) as db:
             q = db.execute("SELECT ジャンル, 正解, 解説, 模範解答, 必須キーワード, 問題文 FROM questions WHERE id = ?", (q_id,)).fetchone()
 
         if not q:
-            return jsonify({"error": "問題が見つかりません"}), 404
+            return jsonify({"error": "対象の問題が見つかりません"}), 404
 
         res = {"mode": mode}
         if mode == "1":
@@ -349,7 +355,7 @@ def check_answer():
 
             except Exception as ai_err:
                 score = 0
-                feedback = f"AI採点中にエラーが発生しました: {str(ai_err)}"
+                feedback = f"AI API呼び出しエラー: {str(ai_err)}"
 
             res.update({
                 "score": score,
@@ -360,19 +366,19 @@ def check_answer():
 
         with sqlite3.connect(DB_PATH, timeout=30) as conn:
             conn.execute("INSERT INTO history (user_id, 問題ID, ジャンル, 回答, 得点, 満点, mode, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                         (current_uid, q_id, q[0], str(user_ans), score, res["max"], mode, session_id))
+                         (current_uid, q_id, q[0], user_ans, score, res["max"], mode, session_id))
             conn.commit()
 
         backup_and_restore_db()
         return jsonify(res)
 
     except Exception as e:
-        return jsonify({"error": f"サーバー内部エラー: {str(e)}"}), 500
+        return jsonify({"error": f"サーバーエラー: {str(e)}"}), 500
 
 @app.route('/get_final_stats', methods=['POST'])
 @login_required
 def get_final_stats():
-    data = request.json
+    data = request.json or {}
     session_id = data.get("session_id")
     exam_type = data.get("exam_type")
     current_uid = int(current_user.id)
@@ -395,7 +401,8 @@ def get_final_stats():
 @app.route('/get_graph', methods=['POST'])
 @login_required
 def get_graph():
-    exam_type = request.json.get("exam_type")
+    data = request.json or {}
+    exam_type = data.get("exam_type")
     current_uid = int(current_user.id)
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
         df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=? AND exam_type=? ORDER BY id ASC", conn, params=(current_uid, exam_type))
@@ -422,7 +429,8 @@ def get_graph():
 @app.route('/reset_history', methods=['POST'])
 @login_required
 def reset_history():
-    exam_type = request.json.get("exam_type")
+    data = request.json or {}
+    exam_type = data.get("exam_type")
     current_uid = int(current_user.id)
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
         if exam_type:
