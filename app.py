@@ -319,43 +319,44 @@ def check_answer():
             question_text = str(q[5])
             model_answer = str(q[3])
             
-            prompt = f"""以下の問題に対する回答を採点し、JSONのみで返してください。
+            prompt = f"""以下の問題に対する記述回答を0〜10点で採点し、日本語で簡単な講評を行ってください。
 
 問題: {question_text}
 模範解答: {model_answer}
-回答: {user_ans}
-
-JSON形式:
-{{"score": 7, "feedback": "解説や理由"}}"""
+回答: {user_ans}"""
 
             score = 0
             feedback = ""
 
             try:
-                # APIキー確認ログ
                 if not GEMINI_API_KEY:
                     raise Exception("GEMINI_API_KEY が設定されていません。")
 
+                # config で response_mime_type と response_schema を指定し、確定的なJSONを要求
                 response = ai_client.models.generate_content(
                     model='gemini-2.5-flash',
-                    contents=prompt
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema={
+                            "type": "OBJECT",
+                            "properties": {
+                                "score": {"type": "INTEGER", "description": "0〜10の得点"},
+                                "feedback": {"type": "STRING", "description": "日本語での採点解説・フィードバック"}
+                            },
+                            "required": ["score", "feedback"]
+                        }
+                    )
                 )
 
                 raw_text = response.text if (response and hasattr(response, 'text') and response.text) else ""
-                print(f"[DEBUG] Raw Gemini Response: {repr(raw_text)}")
 
                 if not raw_text:
-                    raise Exception(f"AIからの返答が空でした。レスポンス構造: {response}")
+                    raise Exception(f"AIからの返答が空でした。")
 
-                # JSON抽出
-                json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-                if json_match:
-                    ai_json = json.loads(json_match.group(0))
-                    score = min(max(int(ai_json.get("score", 0)), 0), 10)
-                    feedback = str(ai_json.get("feedback", "")).strip()
-                else:
-                    score = 5
-                    feedback = raw_text
+                ai_json = json.loads(raw_text)
+                score = min(max(int(ai_json.get("score", 0)), 0), 10)
+                feedback = str(ai_json.get("feedback", "")).strip()
 
             except Exception as ai_err:
                 print(f"[ERROR] AI Call Failed: {str(ai_err)}")
