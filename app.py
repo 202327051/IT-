@@ -293,85 +293,81 @@ def get_question():
 @app.route('/check_answer', methods=['POST'])
 @login_required
 def check_answer():
-    data = request.json
-    mode, q_id, user_ans, session_id = str(data.get("mode")), data.get("id"), data.get("answer"), data.get("session_id")
-    current_uid = int(current_user.id)
+    try:
+        data = request.json
+        mode, q_id, user_ans, session_id = str(data.get("mode")), data.get("id"), data.get("answer"), data.get("session_id")
+        current_uid = int(current_user.id)
 
-    with sqlite3.connect(DB_PATH, timeout=30) as db:
-        q = db.execute("SELECT ジャンル, 正解, 解説, 模範解答, 必須キーワード, 問題文 FROM questions WHERE id = ?", (q_id,)).fetchone()
+        with sqlite3.connect(DB_PATH, timeout=30) as db:
+            q = db.execute("SELECT ジャンル, 正解, 解説, 模範解答, 必須キーワード, 問題文 FROM questions WHERE id = ?", (q_id,)).fetchone()
 
-    res = {"mode": mode}
-    if mode == "1":
-        is_correct = normalize_choice(user_ans) == normalize_choice(q[1])
-        score = 1 if is_correct else 0
-        res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
-    else:
-        question_text = str(q[5])
-        model_answer = str(q[3])
-        
-        # フォーマット崩れが起きないプレーンテキスト形式でプロンプトを指定
-        prompt = f"""以下の問題と解答を比較し、採点（0~10点）と簡潔な解説を作成してください。
+        if not q:
+            return jsonify({"error": "指定された問題が見つかりません"}), 404
+
+        res = {"mode": mode}
+        if mode == "1":
+            is_correct = normalize_choice(user_ans) == normalize_choice(q[1])
+            score = 1 if is_correct else 0
+            res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
+        else:
+            question_text = str(q[5])
+            model_answer = str(q[3])
+            
+            prompt = f"""以下の問題と解答を比較し、採点（0~10点）と簡潔な解説を作成してください。
 
 問題: {question_text}
 模範解答: {model_answer}
 回答: {user_ans}
 
-出力フォーマット（必ず以下の形式で2行で出力すること）:
+出力フォーマット:
 点数: [数字]
 解説: [解説本文]"""
 
-        score = 0
-        feedback = ""
-        max_retries = 10
+            score = 0
+            feedback = ""
 
-        for attempt in range(max_retries):
             try:
-                # 複雑な形式指定を外し、確実にテキストを生成させる
                 response = ai_client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=prompt
                 )
 
                 raw_text = response.text.strip() if (response and response.text) else ""
-                if not raw_text:
-                    raise ValueError("AI returned empty text")
-
-                # 正規表現で「点数」と「解説」を取り出す（JSONパースエラーの可能性を排除）
+                
                 score_match = re.search(r"点数:\s*(\d+)", raw_text)
                 feedback_match = re.search(r"解説:\s*(.*)", raw_text, re.DOTALL)
 
                 if score_match:
-                    score = min(max(int(score_match.group(1)), 0), 10) # 0~10の範囲に収める
+                    score = min(max(int(score_match.group(1)), 0), 10)
+                else:
+                    score = 5
                 
                 if feedback_match:
                     feedback = feedback_match.group(1).strip()
                 else:
-                    feedback = raw_text  # フォーマット指定に沿わなかった場合は返答全文を入れる
+                    feedback = raw_text if raw_text else "採点テキストの生成に失敗しました。"
 
-                # 取り出し成功したらループ終了
-                break
+            except Exception as ai_err:
+                score = 0
+                feedback = f"AI API接続エラー: {str(ai_err)}"
 
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    time.sleep(1.2)
-                else:
-                    score = 0
-                    feedback = "採点処理中に一時的なエラーが発生しました。再度お試しください。"
+            res.update({
+                "score": score,
+                "max": 10,
+                "correct": model_answer,
+                "feedback": feedback
+            })
 
-        res.update({
-            "score": score,
-            "max": 10,
-            "correct": model_answer,
-            "feedback": feedback
-        })
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("INSERT INTO history (user_id, 問題ID, ジャンル, 回答, 得点, 満点, mode, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                         (current_uid, q_id, q[0], str(user_ans), score, res["max"], mode, session_id))
+            conn.commit()
 
-    with sqlite3.connect(DB_PATH, timeout=30) as conn:
-        conn.execute("INSERT INTO history (user_id, 問題ID, ジャンル, 回答, 得点, 満点, mode, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                     (current_uid, q_id, q[0], str(user_ans), score, res["max"], mode, session_id))
-        conn.commit()
+        backup_and_restore_db()
+        return jsonify(res)
 
-    backup_and_restore_db()
-    return jsonify(res)
+    except Exception as e:
+        return jsonify({"error": f"サーバー内部エラー: {str(e)}"}), 500
 
 @app.route('/get_final_stats', methods=['POST'])
 @login_required
