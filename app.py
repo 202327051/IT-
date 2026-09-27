@@ -319,46 +319,48 @@ def check_answer():
             question_text = str(q[5])
             model_answer = str(q[3])
             
-            prompt = f"""以下の試験問題に対する受験者の回答を採点してください。
-必ず指定のJSON形式のみで出力してください。その他のテキストやマークダウン表記は一切含めないでください。
+            prompt = f"""以下の問題に対する回答を採点し、JSONのみで返してください。
 
 問題: {question_text}
 模範解答: {model_answer}
 回答: {user_ans}
 
-【出力JSONフォーマット】
-{{"score": 7, "feedback": "ここに日本語で簡潔な解説やアドバイスを書く"}}
-"""
+JSON形式:
+{{"score": 7, "feedback": "解説や理由"}}"""
 
             score = 0
             feedback = ""
 
             try:
+                # APIキー確認ログ
+                if not GEMINI_API_KEY:
+                    raise Exception("GEMINI_API_KEY が設定されていません。")
+
                 response = ai_client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=prompt
                 )
 
-                raw_text = response.text.strip() if (response and response.text) else ""
-                
-                # マークダウンコードブロック(```json ... ```)を取り除く処理
-                cleaned_text = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.IGNORECASE)
-                cleaned_text = re.sub(r"\s*```$", "", cleaned_text).strip()
+                raw_text = response.text if (response and hasattr(response, 'text') and response.text) else ""
+                print(f"[DEBUG] Raw Gemini Response: {repr(raw_text)}")
 
-                # JSONの中から {} の部分だけを取り出す
-                json_match = re.search(r"\{.*\}", cleaned_text, re.DOTALL)
+                if not raw_text:
+                    raise Exception(f"AIからの返答が空でした。レスポンス構造: {response}")
+
+                # JSON抽出
+                json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
                 if json_match:
                     ai_json = json.loads(json_match.group(0))
                     score = min(max(int(ai_json.get("score", 0)), 0), 10)
                     feedback = str(ai_json.get("feedback", "")).strip()
                 else:
-                    # JSON形式で取れなかった場合のバックアップ処理
                     score = 5
-                    feedback = cleaned_text if cleaned_text else "採点結果を取得できませんでした。"
+                    feedback = raw_text
 
             except Exception as ai_err:
+                print(f"[ERROR] AI Call Failed: {str(ai_err)}")
                 score = 0
-                feedback = f"AI採点呼び出しエラー: {str(ai_err)}"
+                feedback = f"【デバッグエラー詳細】\n{str(ai_err)}"
 
             res.update({
                 "score": score,
