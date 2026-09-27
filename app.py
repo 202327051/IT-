@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 # Google Gemini API ライブラリ
 from google import genai
 from google.genai import types
+from pydantic import BaseModel, Field
 
 app = Flask(__name__, template_folder='templates')
 app.config['SECRET_KEY'] = 'it-pass-key-2026'
@@ -30,6 +31,11 @@ CORS(app)
 # --- Gemini APIの初期化 ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
+
+# レスポンス構造の定義 (Structured Output用)
+class GradingResult(BaseModel):
+    score: int = Field(description="Score from 0 to 10")
+    feedback: str = Field(description="Short feedback in Japanese under 100 characters")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -309,8 +315,7 @@ def check_answer():
         question_text = str(q[5])
         model_answer = str(q[3])
         
-        # 安定出力のため英語の構造化指示プロンプトに変更（解説内容は日本語で指定）
-        prompt = f"""You are an automated grading system. Evaluate the user's answer compared to the model answer.
+        prompt = f"""Evaluate the user's answer compared to the model answer.
 
 Question: {question_text}
 Model Answer: {model_answer}
@@ -318,11 +323,7 @@ User Answer: {user_ans}
 
 Instructions:
 1. Grade score from 0 to 10 based on conceptual accuracy.
-2. Provide concise feedback in Japanese (under 100 characters).
-3. Return ONLY a JSON object with keys "score" (integer) and "feedback" (string).
-
-JSON format:
-{{"score": 8, "feedback": "採点理由と解説"}}"""
+2. Provide concise feedback in Japanese (under 100 characters)."""
 
         score = 0
         feedback = ""
@@ -330,43 +331,31 @@ JSON format:
 
         for attempt in range(max_retries):
             try:
+                # response_schema を使用して強制的かつ確実に構造化JSONを出力
                 response = ai_client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        temperature=0.1,
-                        max_output_tokens=200
+                        response_mime_type="application/json",
+                        response_schema=GradingResult,
+                        temperature=0.1
                     )
                 )
-                
-                # レスポンス文字列の安全取得
-                raw_text = ""
-                if response and hasattr(response, 'text') and response.text:
-                    raw_text = response.text.strip()
-                
-                if not raw_text:
-                    raise ValueError("Empty response text from AI")
 
-                # 正規表現でJSONの波かっこ {} の中身だけ抽出
-                match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-                if not match:
-                    raise ValueError(f"No JSON found in response: {raw_text}")
-                
-                json_str = match.group(0)
-                ai_res = json.loads(json_str)
-
-                score = int(ai_res.get("score", 0))
-                feedback = str(ai_res.get("feedback", ""))
-                
-                # パース成功でループ終了
-                break
+                if response and response.text:
+                    parsed = json.loads(response.text)
+                    score = int(parsed.get("score", 0))
+                    feedback = str(parsed.get("feedback", ""))
+                    break
+                else:
+                    raise ValueError("Empty response text")
 
             except Exception as e:
                 if attempt < max_retries - 1:
-                    time.sleep(1.5)
+                    time.sleep(1.2)
                 else:
                     score = 0
-                    feedback = "採点処理中に一時的な問題が発生しました。再度解答を送信してください。"
+                    feedback = "採点処理中に一時的なエラーが発生しました。再度解答を送信してください。"
 
         res.update({
             "score": score,
