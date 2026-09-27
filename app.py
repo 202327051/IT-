@@ -302,7 +302,7 @@ def check_answer():
             q = db.execute("SELECT ジャンル, 正解, 解説, 模範解答, 必須キーワード, 問題文 FROM questions WHERE id = ?", (q_id,)).fetchone()
 
         if not q:
-            return jsonify({"error": "指定された問題が見つかりません"}), 404
+            return jsonify({"error": "問題が見つかりません"}), 404
 
         res = {"mode": mode}
         if mode == "1":
@@ -345,11 +345,11 @@ def check_answer():
                 if feedback_match:
                     feedback = feedback_match.group(1).strip()
                 else:
-                    feedback = raw_text if raw_text else "採点テキストの生成に失敗しました。"
+                    feedback = raw_text if raw_text else "採点結果を取得できませんでした。"
 
             except Exception as ai_err:
                 score = 0
-                feedback = f"AI API接続エラー: {str(ai_err)}"
+                feedback = f"AI採点中にエラーが発生しました: {str(ai_err)}"
 
             res.update({
                 "score": score,
