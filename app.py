@@ -319,15 +319,16 @@ def check_answer():
             question_text = str(q[5])
             model_answer = str(q[3])
             
-            prompt = f"""以下の問題と解答を比較し、採点（0~10点）と簡潔な解説を作成してください。
+            prompt = f"""以下の試験問題に対する受験者の回答を採点してください。
+必ず指定のJSON形式のみで出力してください。その他のテキストやマークダウン表記は一切含めないでください。
 
 問題: {question_text}
 模範解答: {model_answer}
 回答: {user_ans}
 
-出力フォーマット:
-点数: [数字]
-解説: [解説本文]"""
+【出力JSONフォーマット】
+{{"score": 7, "feedback": "ここに日本語で簡潔な解説やアドバイスを書く"}}
+"""
 
             score = 0
             feedback = ""
@@ -340,22 +341,24 @@ def check_answer():
 
                 raw_text = response.text.strip() if (response and response.text) else ""
                 
-                score_match = re.search(r"点数:\s*(\d+)", raw_text)
-                feedback_match = re.search(r"解説:\s*(.*)", raw_text, re.DOTALL)
+                # マークダウンコードブロック(```json ... ```)を取り除く処理
+                cleaned_text = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.IGNORECASE)
+                cleaned_text = re.sub(r"\s*```$", "", cleaned_text).strip()
 
-                if score_match:
-                    score = min(max(int(score_match.group(1)), 0), 10)
+                # JSONの中から {} の部分だけを取り出す
+                json_match = re.search(r"\{.*\}", cleaned_text, re.DOTALL)
+                if json_match:
+                    ai_json = json.loads(json_match.group(0))
+                    score = min(max(int(ai_json.get("score", 0)), 0), 10)
+                    feedback = str(ai_json.get("feedback", "")).strip()
                 else:
+                    # JSON形式で取れなかった場合のバックアップ処理
                     score = 5
-                
-                if feedback_match:
-                    feedback = feedback_match.group(1).strip()
-                else:
-                    feedback = raw_text if raw_text else "採点結果を取得できませんでした。"
+                    feedback = cleaned_text if cleaned_text else "採点結果を取得できませんでした。"
 
             except Exception as ai_err:
                 score = 0
-                feedback = f"AI API呼び出しエラー: {str(ai_err)}"
+                feedback = f"AI採点呼び出しエラー: {str(ai_err)}"
 
             res.update({
                 "score": score,
