@@ -318,7 +318,7 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
 
         score = 0
         feedback = ""
-        max_retries = 10  # 503混雑や429制限が出ても成功するまで最大10回試行
+        max_retries = 10  # 失敗しても最大10回自動で再試行
 
         for attempt in range(max_retries):
             try:
@@ -331,25 +331,21 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
                         temperature=0.1
                     )
                 )
-                ai_res = json.loads(response.text)
+                text = response.text if response and response.text else ""
+                if not text.strip():
+                    raise ValueError("Empty response from AI")
+
+                ai_res = json.loads(text)
                 score = int(ai_res.get("score", 0))
                 feedback = str(ai_res.get("feedback", ""))
                 break  # 正常にパースできたらループ終了
-            except (json.JSONDecodeError, KeyError, ValueError):
-                # AIの返答が一時的に破損していた場合は少し待ってリトライ
-                if attempt < max_retries - 1:
-                    time.sleep(0.5)
-                    continue
-                else:
-                    feedback = "採点結果のフォーマット解析に失敗しました。模範解答を確認してください。"
             except Exception as e:
-                err_str = str(e)
-                # 503(混雑) または 429(レート制限/一時上限) の場合は待機時間を徐々に伸ばして再試行
-                if ("503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str) and attempt < max_retries - 1:
+                # パース失敗や空文字、一時APIエラーの場合は時間をおいてリトライ
+                if attempt < max_retries - 1:
                     wait_seconds = min(1.0 * (1.5 ** attempt), 8.0)
                     time.sleep(wait_seconds)
                 else:
-                    feedback = f"AI採点エラー: {err_str}"
+                    feedback = f"AI採点エラー: {str(e)}"
                     break
 
         res.update({
