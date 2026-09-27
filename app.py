@@ -309,16 +309,24 @@ def check_answer():
         question_text = str(q[5])
         model_answer = str(q[3])
         
-        prompt = f"""[問題]:{question_text}
-[模範解答]:{model_answer}
-[回答]:{user_ans}
+        # 安定出力のため英語の構造化指示プロンプトに変更（解説内容は日本語で指定）
+        prompt = f"""You are an automated grading system. Evaluate the user's answer compared to the model answer.
 
-意味が合っていれば正解とし、10点満点で採点してJSONのみ出力。
-JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
+Question: {question_text}
+Model Answer: {model_answer}
+User Answer: {user_ans}
+
+Instructions:
+1. Grade score from 0 to 10 based on conceptual accuracy.
+2. Provide concise feedback in Japanese (under 100 characters).
+3. Return ONLY a JSON object with keys "score" (integer) and "feedback" (string).
+
+JSON format:
+{{"score": 8, "feedback": "採点理由と解説"}}"""
 
         score = 0
         feedback = ""
-        max_retries = 15  # 成功するまで最大15回リトライ
+        max_retries = 10
 
         for attempt in range(max_retries):
             try:
@@ -326,30 +334,39 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
                     model='gemini-2.5-flash',
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        max_output_tokens=150,
-                        temperature=0.1
+                        temperature=0.1,
+                        max_output_tokens=200
                     )
                 )
                 
-                # レスポンス文字列取得と検証
-                raw_text = response.text if (response and response.text) else ""
-                if not raw_text.strip():
-                    raise ValueError("Empty response")
+                # レスポンス文字列の安全取得
+                raw_text = ""
+                if response and hasattr(response, 'text') and response.text:
+                    raw_text = response.text.strip()
+                
+                if not raw_text:
+                    raise ValueError("Empty response text from AI")
 
-                ai_res = json.loads(raw_text)
+                # 正規表現でJSONの波かっこ {} の中身だけ抽出
+                match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+                if not match:
+                    raise ValueError(f"No JSON found in response: {raw_text}")
+                
+                json_str = match.group(0)
+                ai_res = json.loads(json_str)
+
                 score = int(ai_res.get("score", 0))
                 feedback = str(ai_res.get("feedback", ""))
                 
-                # 正常にパースできたらループ脱出
+                # パース成功でループ終了
                 break
 
-            except Exception:
-                # エラーや空のレスポンス、503混雑時は少し待って再試行
+            except Exception as e:
                 if attempt < max_retries - 1:
-                    time.sleep(1.0)
+                    time.sleep(1.5)
                 else:
-                    feedback = "混雑のためAI採点が取得できませんでした。時間をおいて再試行してください。"
+                    score = 0
+                    feedback = "採点処理中に一時的な問題が発生しました。再度解答を送信してください。"
 
         res.update({
             "score": score,
