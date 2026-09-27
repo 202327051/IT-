@@ -22,7 +22,6 @@ import matplotlib.pyplot as plt
 # Google Gemini API ライブラリ
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, Field
 
 app = Flask(__name__, template_folder='templates')
 app.config['SECRET_KEY'] = 'it-pass-key-2026'
@@ -31,11 +30,6 @@ CORS(app)
 # --- Gemini APIの初期化 ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
-
-# レスポンス構造の定義 (Structured Output用)
-class GradingResult(BaseModel):
-    score: int = Field(description="Score from 0 to 10")
-    feedback: str = Field(description="Short feedback in Japanese under 100 characters")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -315,15 +309,16 @@ def check_answer():
         question_text = str(q[5])
         model_answer = str(q[3])
         
-        prompt = f"""Evaluate the user's answer compared to the model answer.
+        # フォーマット崩れが起きないプレーンテキスト形式でプロンプトを指定
+        prompt = f"""以下の問題と解答を比較し、採点（0~10点）と簡潔な解説を作成してください。
 
-Question: {question_text}
-Model Answer: {model_answer}
-User Answer: {user_ans}
+問題: {question_text}
+模範解答: {model_answer}
+回答: {user_ans}
 
-Instructions:
-1. Grade score from 0 to 10 based on conceptual accuracy.
-2. Provide concise feedback in Japanese (under 100 characters)."""
+出力フォーマット（必ず以下の形式で2行で出力すること）:
+点数: [数字]
+解説: [解説本文]"""
 
         score = 0
         feedback = ""
@@ -331,31 +326,37 @@ Instructions:
 
         for attempt in range(max_retries):
             try:
-                # response_schema を使用して強制的かつ確実に構造化JSONを出力
+                # 複雑な形式指定を外し、確実にテキストを生成させる
                 response = ai_client.models.generate_content(
                     model='gemini-2.5-flash',
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=GradingResult,
-                        temperature=0.1
-                    )
+                    contents=prompt
                 )
 
-                if response and response.text:
-                    parsed = json.loads(response.text)
-                    score = int(parsed.get("score", 0))
-                    feedback = str(parsed.get("feedback", ""))
-                    break
+                raw_text = response.text.strip() if (response and response.text) else ""
+                if not raw_text:
+                    raise ValueError("AI returned empty text")
+
+                # 正規表現で「点数」と「解説」を取り出す（JSONパースエラーの可能性を排除）
+                score_match = re.search(r"点数:\s*(\d+)", raw_text)
+                feedback_match = re.search(r"解説:\s*(.*)", raw_text, re.DOTALL)
+
+                if score_match:
+                    score = min(max(int(score_match.group(1)), 0), 10) # 0~10の範囲に収める
+                
+                if feedback_match:
+                    feedback = feedback_match.group(1).strip()
                 else:
-                    raise ValueError("Empty response text")
+                    feedback = raw_text  # フォーマット指定に沿わなかった場合は返答全文を入れる
+
+                # 取り出し成功したらループ終了
+                break
 
             except Exception as e:
                 if attempt < max_retries - 1:
                     time.sleep(1.2)
                 else:
                     score = 0
-                    feedback = "採点処理中に一時的なエラーが発生しました。再度解答を送信してください。"
+                    feedback = "採点処理中に一時的なエラーが発生しました。再度お試しください。"
 
         res.update({
             "score": score,
