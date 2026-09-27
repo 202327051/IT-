@@ -158,7 +158,7 @@
             div.innerHTML = text;
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
-            return div; // 追加した要素を返すように変更
+            return div;
         }
 
         async function initChat() {
@@ -301,16 +301,15 @@
                 const res = await fetch('/check_answer', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({mode: mode, id: qId, answer: val, session_id: sessionId})
+                    body: JSON.stringify({
+                        mode: String(mode),
+                        id: Number(qId),
+                        answer: String(val),
+                        session_id: String(sessionId)
+                    })
                 });
 
-                const rawText = await res.text();
-                let data;
-                try {
-                    data = JSON.parse(rawText);
-                } catch (e) {
-                    throw new Error("サーバー返答が正しくありません: " + rawText.substring(0, 100));
-                }
+                const data = await res.json();
 
                 if (!res.ok || data.error) {
                     throw new Error(data.error || "採点処理に失敗しました");
@@ -336,7 +335,7 @@
                 document.getElementById("next-area").classList.remove("hidden");
 
             } catch (err) {
-                const errText = `<span style="color:red">⚠️ エラー: ${err.message}</span>`;
+                const errText = `<span style="color:red">⚠️ AI採点エラー: ${err.message}</span>`;
                 if (loadingElement) {
                     loadingElement.innerHTML = errText;
                 } else {
