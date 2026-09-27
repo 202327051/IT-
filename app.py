@@ -713,8 +713,8 @@ def check_answer():
             model_answer = str(q[3])
 
             prompt = f"""
-以下の問題に対する記述回答を0〜10点で採点し、
-日本語で簡単な講評を行ってください。
+以下の問題に対する記述回答を0〜10点で採点し、日本語で簡単な講評を行ってください。
+出力は思考プロセスや余計な文章を一切含めず、純粋なJSONオブジェクトのみを出力してください。
 
 問題:
 {question_text}
@@ -776,37 +776,29 @@ def check_answer():
 
                 raw_text = str(raw_text).strip()
 
-                # デバッグ用
-                print(
-                    "========== Gemini RAW RESPONSE =========="
-                )
-                print(repr(raw_text))
-                print(
-                    "========================================="
-                )
-
                 if not raw_text:
                     raise Exception(
                         "Geminiからの返答が空でした。"
                     )
 
                 # ------------------------------------------
+                # <thought> などの思考プロセス・タグを正規表現で削除
+                # ------------------------------------------
+                raw_text = re.sub(r'<thought>.*?</thought>', '', raw_text, flags=re.DOTALL).strip()
+
+                # ------------------------------------------
                 # MarkdownのJSONコードブロックを除去
                 # ------------------------------------------
-                if raw_text.startswith("```"):
+                if "```" in raw_text:
+                    raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.IGNORECASE)
+                    raw_text = re.sub(r"\s*```$", "", raw_text).strip()
 
-                    raw_text = re.sub(
-                        r"^```(?:json)?\s*",
-                        "",
-                        raw_text,
-                        flags=re.IGNORECASE
-                    )
-
-                    raw_text = re.sub(
-                        r"\s*```$",
-                        "",
-                        raw_text
-                    ).strip()
+                # ------------------------------------------
+                # 最も外側の '{' と '}' の間を抽出（余計な文字対策）
+                # ------------------------------------------
+                json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+                if json_match:
+                    raw_text = json_match.group(0)
 
                 # ------------------------------------------
                 # JSONとして解析
