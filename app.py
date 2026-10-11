@@ -714,7 +714,6 @@ def check_answer():
 
             prompt = f"""
 以下の問題に対する記述回答を0〜10点で採点し、日本語で簡単な講評を行ってください。
-出力は思考プロセスや余計な文章を一切含めず、純粋なJSONオブジェクトのみを出力してください。
 
 問題:
 {question_text}
@@ -740,6 +739,7 @@ def check_answer():
                     model='gemini-2.5-flash',
                     contents=prompt,
                     config=types.GenerateContentConfig(
+                        thinking_config=types.ThinkingConfig(thinking_budget=0),
                         response_mime_type="application/json",
                         response_schema={
                             "type": "OBJECT",
@@ -782,46 +782,26 @@ def check_answer():
                     )
 
                 # ------------------------------------------
-                # <thought> などの思考プロセス・タグを正規表現で削除
+                # タグ・思考プロセスの削除＆整形
                 # ------------------------------------------
                 raw_text = re.sub(r'<thought>.*?</thought>', '', raw_text, flags=re.DOTALL).strip()
 
-                # ------------------------------------------
-                # MarkdownのJSONコードブロックを除去
-                # ------------------------------------------
                 if "```" in raw_text:
                     raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.IGNORECASE)
                     raw_text = re.sub(r"\s*```$", "", raw_text).strip()
 
-                # ------------------------------------------
-                # 最も外側の '{' と '}' の間を抽出（余計な文字対策）
-                # ------------------------------------------
                 json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
                 if json_match:
                     raw_text = json_match.group(0)
 
                 # ------------------------------------------
-                # JSONとして解析
+                # JSONとして解析（改行エスケープ救済付き）
                 # ------------------------------------------
                 try:
-
                     ai_json = json.loads(raw_text)
-
-                except json.JSONDecodeError as json_err:
-
-                    print(
-                        "[ERROR] Gemini JSON解析失敗:",
-                        str(json_err)
-                    )
-
-                    print(
-                        "[ERROR] 解析対象:",
-                        repr(raw_text)
-                    )
-
-                    raise Exception(
-                        "Geminiの返答をJSONとして解析できませんでした。"
-                    )
+                except json.JSONDecodeError:
+                    sanitized_text = re.sub(r'(?<!\\)\n', r'\\n', raw_text)
+                    ai_json = json.loads(sanitized_text)
 
                 # ------------------------------------------
                 # 採点結果取得
