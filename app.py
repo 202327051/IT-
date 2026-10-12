@@ -14,13 +14,13 @@ import shutil
 import urllib.parse
 import re
 import json
-import time
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from google import genai
 from google.genai import types
+from pydantic import BaseModel, Field
 
 app = Flask(__name__, template_folder='templates')
 app.config['SECRET_KEY'] = 'it-pass-key-2026'
@@ -39,6 +39,10 @@ UPLOAD_DIR = os.path.join("CSV", "uploads")
 
 os.makedirs(OFFICIAL_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+class GradingResult(BaseModel):
+    score: int = Field(description="0〜10の得点")
+    feedback: str = Field(description="日本語での採点解説・フィードバック")
 
 class User(UserMixin):
     def __init__(self, id):
@@ -296,33 +300,15 @@ def check_answer():
                     model='gemini-2.5-flash',
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        thinking_config=types.ThinkingConfig(thinking_budget=0),
                         response_mime_type="application/json",
-                        response_schema={
-                            "type": "OBJECT",
-                            "properties": {
-                                "score": {"type": "INTEGER", "description": "0〜10の得点"},
-                                "feedback": {"type": "STRING", "description": "日本語での採点解説・フィードバック"}
-                            },
-                            "required": ["score", "feedback"]
-                        }
+                        response_schema=GradingResult,
                     )
                 )
                 raw_text = response.text.strip() if (response and response.text) else ""
                 if not raw_text:
                     raise Exception("Geminiからの返答が空でした。")
-                raw_text = re.sub(r'<thought>.*?</thought>', '', raw_text, flags=re.DOTALL).strip()
-                if "```" in raw_text:
-                    raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.IGNORECASE)
-                    raw_text = re.sub(r"\s*```$", "", raw_text).strip()
-                json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-                if json_match:
-                    raw_text = json_match.group(0)
-                try:
-                    ai_json = json.loads(raw_text)
-                except json.JSONDecodeError:
-                    sanitized_text = re.sub(r'(?<!\\)\n', r'\\n', raw_text)
-                    ai_json = json.loads(sanitized_text)
+                
+                ai_json = json.loads(raw_text, strict=False)
                 score = min(max(int(ai_json.get("score", 0)), 0), 10)
                 feedback = str(ai_json.get("feedback", "")).strip()
                 if not feedback:
