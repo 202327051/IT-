@@ -116,6 +116,7 @@ def process_csv_file(file_path, target_user_id, raw_filename):
 def init_database():
     backup_and_restore_db()
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 問題ID INTEGER, ジャンル TEXT, 回答 TEXT, 得点 INTEGER, 満点 INTEGER, mode TEXT, session_id TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS session_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, timestamp TEXT, accuracy REAL, exam_type TEXT)")
@@ -187,8 +188,9 @@ def delete_exam():
 @login_required
 def get_available_modes():
     exam_type = request.json.get("exam_type")
+    current_uid = int(current_user.id)
     with sqlite3.connect(DB_PATH, timeout=30) as db:
-        modes = db.execute("SELECT DISTINCT mode FROM questions WHERE (user_id = ? OR user_id = 0) AND exam_type = ?", (int(current_user.id), exam_type)).fetchall()
+        modes = db.execute("SELECT DISTINCT mode FROM questions WHERE (user_id = ? OR user_id = 0) AND exam_type = ?", (current_uid, exam_type)).fetchall()
     return jsonify({"modes": [m[0] for m in modes if m[0]]})
 
 @app.route('/upload_csv', methods=['POST'])
@@ -290,9 +292,12 @@ def check_answer():
         else:
             question_text = str(q[5])
             model_answer = str(q[3])
-            prompt = f"以下の問題に対する記述回答を0〜10点で採点し、日本語で簡単な講評を行ってください。\n\n問題:\n{question_text}\n\n模範解答:\n{model_answer}\n\n回答:\n{user_ans}"
+            keywords = str(q[4]) if q[4] else "なし"
+            
+            prompt = f"以下の問題に対する記述回答を0〜10点で採点し、日本語で簡単な講評を行ってください。\n\n問題:\n{question_text}\n\n必須キーワード:\n{keywords}\n\n模範解答:\n{model_answer}\n\n回答:\n{user_ans}"
             score = 0
             feedback = ""
+            raw_text = ""
             try:
                 if not GEMINI_API_KEY:
                     raise Exception("GEMINI_API_KEY が設定されていません。")
@@ -302,19 +307,24 @@ def check_answer():
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
                         response_schema=GradingResult,
+                        temperature=0.2,
                     )
                 )
                 raw_text = response.text.strip() if (response and response.text) else ""
                 if not raw_text:
                     raise Exception("Geminiからの返答が空でした。")
                 
-                ai_json = json.loads(raw_text, strict=False)
+                # マークダウン装飾（```json 〜 ```）の除去
+                clean_json_str = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw_text, flags=re.MULTILINE).strip()
+                
+                ai_json = json.loads(clean_json_str, strict=False)
                 score = min(max(int(ai_json.get("score", 0)), 0), 10)
                 feedback = str(ai_json.get("feedback", "")).strip()
                 if not feedback:
                     feedback = "AIから講評を取得できませんでした。"
             except Exception as ai_err:
-                print("[ERROR] AI Call Failed:", str(ai_err))
+                print("[ERROR] AI Call Failed. Raw text:", repr(raw_text))
+                print("[ERROR] AI Call Failed Detail:", str(ai_err))
                 score = 0
                 feedback = f"AI採点中にエラーが発生しました。\n【詳細】{str(ai_err)}"
             res.update({"score": score, "max": 10, "correct": model_answer, "feedback": feedback})
@@ -371,6 +381,7 @@ def get_graph():
     img.seek(0)
     plot_url = base64.b64encode(img.getvalue()).decode()
     plt.close(fig)
+    fig.clf()
     return jsonify({"plot": plot_url})
 
 @app.route('/reset_history', methods=['POST'])
