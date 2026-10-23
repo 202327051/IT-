@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ITパスポート試験対策Webアプリ</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <!-- Markdown 描画用ライブラリ -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     body { background-color: #f8f9fa; font-family: 'Helvetica Neue', Arial, sans-serif; }
     .card { border-radius: 12px; border: none; }
@@ -12,6 +14,11 @@
     .badge-genre { font-size: 0.9em; padding: 6px 12px; border-radius: 12px; }
     #explanation-box { display: none; background-color: #eef7ff; border-left: 5px solid #0d6efd; }
     #feedback-box { display: none; background-color: #fff8e6; border-left: 5px solid #ffc107; }
+    
+    /* Markdown 表の見た目自動調整 */
+    #q-text table { width: 100%; margin-top: 10px; margin-bottom: 15px; border-collapse: collapse; }
+    #q-text th, #q-text td { border: 1px solid #dee2e6; padding: 8px 12px; text-align: left; }
+    #q-text th { background-color: #e9ecef; }
   </style>
 </head>
 <body>
@@ -73,7 +80,7 @@
         <span id="q-genre" class="badge bg-secondary badge-genre">ジャンル</span>
         <span id="q-count" class="text-muted fw-bold"></span>
       </div>
-      <h5 id="q-text" class="fw-bold mb-4" style="line-height: 1.6;"></h5>
+      <div id="q-text" class="fw-bold mb-4" style="line-height: 1.6;"></div>
 
       <!-- 選択式 回答インターフェース -->
       <div id="choice-area" class="d-grid gap-2 mb-3"></div>
@@ -133,7 +140,6 @@
   let currentExam = "";
   let questionCount = 0;
 
-  // 初期化
   window.onload = function() {
     loadExams();
   };
@@ -303,7 +309,9 @@
     questionCount++;
     document.getElementById('q-count').innerText = `第 ${questionCount} 問`;
     document.getElementById('q-genre').innerText = res.genre;
-    document.getElementById('q-text').innerText = res.question;
+    
+    // 【重要修正】Markdown記法（表含む）をHTMLに自動変換して表示
+    document.getElementById('q-text').innerHTML = marked.parse(res.question);
 
     const choiceArea = document.getElementById('choice-area');
     const textArea = document.getElementById('text-area');
