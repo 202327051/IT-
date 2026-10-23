@@ -294,7 +294,7 @@ def check_answer():
             model_answer = str(q[3])
             keywords = str(q[4]) if q[4] else "なし"
             
-            prompt = f"以下の問題に対する記述回答を0〜10点で採点し、日本語で簡単な講評を行ってください。\n\n問題:\n{question_text}\n\n必須キーワード:\n{keywords}\n\n模範解答:\n{model_answer}\n\n回答:\n{user_ans}"
+            prompt = f"以下の問題（Markdown表が含まれている場合があります）に対する記述回答を0〜10点で採点し、日本語で簡単な講評を行ってください。\n\n問題:\n{question_text}\n\n必須キーワード:\n{keywords}\n\n模範解答:\n{model_answer}\n\n回答:\n{user_ans}"
             score = 0
             feedback = ""
             raw_text = ""
@@ -307,14 +307,13 @@ def check_answer():
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
                         response_schema=GradingResult,
-                        temperature=0.2,
+                        temperature=0.1,
                     )
                 )
                 raw_text = response.text.strip() if (response and response.text) else ""
                 if not raw_text:
                     raise Exception("Geminiからの返答が空でした。")
                 
-                # マークダウン装飾（```json 〜 ```）の除去
                 clean_json_str = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw_text, flags=re.MULTILINE).strip()
                 
                 ai_json = json.loads(clean_json_str, strict=False)
@@ -323,10 +322,14 @@ def check_answer():
                 if not feedback:
                     feedback = "AIから講評を取得できませんでした。"
             except Exception as ai_err:
+                err_msg = str(ai_err)
                 print("[ERROR] AI Call Failed. Raw text:", repr(raw_text))
-                print("[ERROR] AI Call Failed Detail:", str(ai_err))
+                print("[ERROR] AI Call Failed Detail:", err_msg)
                 score = 0
-                feedback = f"AI採点中にエラーが発生しました。\n【詳細】{str(ai_err)}"
+                if "RESOURCE_EXHAUSTED" in err_msg or "429" in err_msg:
+                    feedback = "【利用制限エラー】Gemini API の呼び出し制限に達しました。時間を置くか設定を確認してください。"
+                else:
+                    feedback = f"AI採点中にエラーが発生しました。\n【詳細】{err_msg}"
             res.update({"score": score, "max": 10, "correct": model_answer, "feedback": feedback})
         with sqlite3.connect(DB_PATH, timeout=30) as conn:
             conn.execute("INSERT INTO history (user_id, 問題ID, ジャンル, 回答, 得点, 満点, mode, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (current_uid, q_id, q[0], user_ans, score, res["max"], mode, session_id))
