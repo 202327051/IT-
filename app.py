@@ -76,10 +76,12 @@ def read_csv_safely(file_path):
     encodings = ["utf-8-sig", "cp932", "shift_jis", "utf-8"]
     for enc in encodings:
         try:
-            return pd.read_csv(file_path, encoding=enc)
+            df = pd.read_csv(file_path, encoding=enc)
+            return df.fillna("")
         except (UnicodeDecodeError, Exception):
             continue
-    return pd.read_csv(file_path, encoding="utf-8", errors="replace")
+    df = pd.read_csv(file_path, encoding="utf-8", errors="replace")
+    return df.fillna("")
 
 def process_csv_file(file_path, target_user_id, raw_filename):
     if "_選択式" in raw_filename:
@@ -96,18 +98,19 @@ def process_csv_file(file_path, target_user_id, raw_filename):
             for _, q in df.iterrows():
                 prob = str(q.get("問題文", "")).strip()
                 if not prob: continue
+                genre_raw = str(q.get("ジャンル", "")).strip()
+                genre = "" if genre_raw in ["nan", "None", "NaN"] else genre_raw
+                
                 if mode == "1":
-                    genre = str(q.get("ジャンル", "一般")).strip()
                     conn.execute("""
                         INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, ア, イ, ウ, エ, 正解, 解説, mode)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1')
                     """, (target_user_id, exam_name, genre, prob, str(q.get("ア","")), str(q.get("イ","")), str(q.get("ウ","")), str(q.get("エ","")), str(q.get("正解","")).strip(), str(q.get("解説","")).strip()))
                 else:
-                    genre = "記述式"
                     conn.execute("""
                         INSERT INTO questions (user_id, exam_type, ジャンル, 問題文, 必須キーワード, 模範解答, mode)
                         VALUES (?, ?, ?, ?, ?, ?, '2')
-                    """, (target_user_id, exam_name, genre, prob, str(q.get("必須キーワード","")).strip(), str(q.get("模範解答","")).strip()))
+                    """, (target_user_id, exam_name, genre if genre else "記述式", prob, str(q.get("必須キーワード","")).strip(), str(q.get("模範解答","")).strip()))
             conn.commit()
         return True, exam_name
     except Exception as e:
@@ -262,7 +265,13 @@ def get_question():
             """, (current_uid, mode, selected_exam)).fetchone()
     if not q:
         return jsonify({"error": "問題がありません"}), 404
-    genre_display = f"{q[7]} | {q[1]}" if mode == "1" else q[7]
+    
+    raw_genre = str(q[1]).strip()
+    if raw_genre and raw_genre not in ["nan", "None", "NaN"]:
+        genre_display = f"{q[7]} | {raw_genre}"
+    else:
+        genre_display = str(q[7])
+        
     res = {"id": q[0], "genre": genre_display, "question": str(q[2])}
     if mode == "1":
         res["choices"] = [f"ア：{q[3]}", f"イ：{q[4]}", f"ウ：{q[5]}", f"エ：{q[6]}"]
@@ -285,6 +294,10 @@ def check_answer():
         if not q:
             return jsonify({"error": "対象の問題が見つかりません"}), 404
         res = {"mode": mode}
+        
+        raw_genre = str(q[0]).strip()
+        db_genre = "" if raw_genre in ["nan", "None", "NaN"] else raw_genre
+
         if mode == "1":
             is_correct = (normalize_choice(user_ans) == normalize_choice(q[1]))
             score = 1 if is_correct else 0
@@ -315,7 +328,6 @@ def check_answer():
                     raise Exception("Geminiからの返答が空でした。")
                 
                 clean_json_str = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw_text, flags=re.MULTILINE).strip()
-                
                 ai_json = json.loads(clean_json_str, strict=False)
                 score = min(max(int(ai_json.get("score", 0)), 0), 10)
                 feedback = str(ai_json.get("feedback", "")).strip()
@@ -331,8 +343,9 @@ def check_answer():
                 else:
                     feedback = f"AI採点中にエラーが発生しました。\n【詳細】{err_msg}"
             res.update({"score": score, "max": 10, "correct": model_answer, "feedback": feedback})
+            
         with sqlite3.connect(DB_PATH, timeout=30) as conn:
-            conn.execute("INSERT INTO history (user_id, 問題ID, ジャンル, 回答, 得点, 満点, mode, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (current_uid, q_id, q[0], user_ans, score, res["max"], mode, session_id))
+            conn.execute("INSERT INTO history (user_id, 問題ID, ジャンル, 回答, 得点, 満点, mode, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (current_uid, q_id, db_genre, user_ans, score, res["max"], mode, session_id))
             conn.commit()
         backup_and_restore_db()
         return jsonify(res)
