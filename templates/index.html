@@ -14,6 +14,7 @@
     #explanation-box { display: none; background-color: #eef7ff; border-left: 5px solid #0d6efd; }
     #feedback-box { display: none; background-color: #fff8e6; border-left: 5px solid #ffc107; }
     
+    /* Markdown 表のレンダリングスタイル調整 */
     #q-text table { width: 100%; margin-top: 10px; margin-bottom: 15px; border-collapse: collapse; }
     #q-text th, #q-text td { border: 1px solid #dee2e6; padding: 8px 12px; text-align: left; }
     #q-text th { background-color: #e9ecef; }
@@ -133,6 +134,12 @@
 </div>
 
 <script>
+  // ★ 通常の改行コード（\n）も確実にHTML改行（<br>）として反映させるmarked設定
+  marked.setOptions({
+    breaks: true,
+    gfm: true
+  });
+
   let currentSessionId = "";
   let currentMode = "1";
   let currentExam = "";
@@ -308,6 +315,7 @@
     document.getElementById('q-count').innerText = `第 ${questionCount} 問`;
     document.getElementById('q-genre').innerText = res.genre;
     
+    // Markdown 表・改行をパースして問題文を描画
     document.getElementById('q-text').innerHTML = marked.parse(res.question);
 
     const choiceArea = document.getElementById('choice-area');
@@ -320,7 +328,8 @@
       res.choices.forEach(c => {
         const btn = document.createElement('button');
         btn.className = 'btn btn-outline-primary text-start p-3 btn-custom';
-        btn.innerText = c;
+        // 選択肢内のMarkdown表記（表など）もパースして綺麗に表示
+        btn.innerHTML = marked.parse(c);
         btn.onclick = () => submitChoice(res.id, c.charAt(0));
         choiceArea.appendChild(btn);
       });
