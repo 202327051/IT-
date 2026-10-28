@@ -5,11 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ITパスポート試験対策Webアプリ</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-  
-  <!-- ChatGPT提案の2つのライブラリを追加 -->
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
-  
   <style>
     body { background-color: #f8f9fa; font-family: 'Helvetica Neue', Arial, sans-serif; }
     .card { border-radius: 12px; border: none; }
@@ -18,36 +13,13 @@
     #explanation-box { display: none; background-color: #eef7ff; border-left: 5px solid #0d6efd; }
     #feedback-box { display: none; background-color: #fff8e6; border-left: 5px solid #ffc107; }
     
-    /* ChatGPT提案のテーブル・文章装飾CSS */
+    /* Excelの改行・レイアウトをそのまま画面上で再現するCSS */
     #q-text {
-      white-space: normal;
+      white-space: pre-wrap;
       line-height: 1.6;
       font-family: inherit;
       overflow-wrap: anywhere;
     }
-    #q-text p {
-      margin-bottom: 0.8em;
-    }
-    #q-text table {
-      border-collapse: collapse;
-      margin: 12px 0;
-      width: auto;
-      max-width: 100%;
-    }
-    #q-text th,
-    #q-text td {
-      border: 1px solid #dee2e6;
-      padding: 8px 12px;
-      text-align: left;
-    }
-    #q-text th {
-      background-color: #e9ecef;
-    }
-    #q-text pre {
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
-
     #choice-area button {
       white-space: pre-wrap;
       text-align: left;
@@ -168,12 +140,6 @@
 </div>
 
 <script>
-  // 普通の改行（\n）もMarkdownで改行（<br>）として変換する設定
-  marked.setOptions({
-    breaks: true,
-    gfm: true
-  });
-
   let currentSessionId = "";
   let currentMode = "1";
   let currentExam = "";
@@ -349,8 +315,8 @@
     document.getElementById('q-count').innerText = `第 ${questionCount} 問`;
     document.getElementById('q-genre').innerText = res.genre;
     
-    // ChatGPT提案の安全なHTMLパース（Markdown表をテーブル化）
-    document.getElementById('q-text').innerHTML = DOMPurify.sanitize(marked.parse(res.question || ""));
+    // 解説と同様に innerText で出力（改行を100%忠実に再現）
+    document.getElementById('q-text').innerText = res.question || "";
 
     const choiceArea = document.getElementById('choice-area');
     const textArea = document.getElementById('text-area');
@@ -362,7 +328,7 @@
       res.choices.forEach(c => {
         const btn = document.createElement('button');
         btn.className = 'btn btn-outline-primary text-start p-3 btn-custom';
-        btn.innerHTML = DOMPurify.sanitize(marked.parse(c || ""));
+        btn.innerText = c;
         btn.onclick = () => submitChoice(res.id, c.charAt(0));
         choiceArea.appendChild(btn);
       });
