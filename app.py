@@ -99,7 +99,7 @@ def process_csv_file(file_path, target_user_id, raw_filename):
                 prob = str(q.get("問題文", "")).strip()
                 if not prob: continue
                 genre_raw = str(q.get("ジャンル", "")).strip()
-                genre = "" if genre_raw in ["nan", "None", "NaN"] else genre_raw
+                genre = "" if genre_raw.lower() in ["nan", "none", "nan", "null"] else genre_raw
                 
                 if mode == "1":
                     conn.execute("""
@@ -266,8 +266,8 @@ def get_question():
     if not q:
         return jsonify({"error": "問題がありません"}), 404
     
-    raw_genre = str(q[1]).strip()
-    if raw_genre and raw_genre not in ["nan", "None", "NaN"]:
+    raw_genre = "" if q[1] is None else str(q[1]).strip()
+    if raw_genre.lower() not in ["", "nan", "none", "null"]:
         genre_display = f"{q[7]} | {raw_genre}"
     else:
         genre_display = str(q[7])
@@ -296,7 +296,7 @@ def check_answer():
         res = {"mode": mode}
         
         raw_genre = str(q[0]).strip()
-        db_genre = "" if raw_genre in ["nan", "None", "NaN"] else raw_genre
+        db_genre = "" if raw_genre.lower() in ["nan", "none", "null"] else raw_genre
 
         if mode == "1":
             is_correct = (normalize_choice(user_ans) == normalize_choice(q[1]))
