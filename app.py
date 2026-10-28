@@ -84,7 +84,7 @@ def read_csv_safely(file_path):
     if df is None:
         df = pd.read_csv(file_path, encoding="utf-8", errors="replace")
     
-    # NaNの置換とセル内改行の統一（修正箇所）
+    # NaNの置換およびセル内改行コードの統一処理
     df = df.fillna("")
     for col in df.columns:
         if df[col].dtype == object:
@@ -107,7 +107,7 @@ def process_csv_file(file_path, target_user_id, raw_filename):
                 prob = str(q.get("問題文", "")).strip()
                 if not prob: continue
                 genre_raw = str(q.get("ジャンル", "")).strip()
-                genre = "" if genre_raw.lower() in ["nan", "none", "null"] else genre_raw
+                genre = "" if genre_raw.lower() in ["nan", "none", "null", "undefined"] else genre_raw
                 
                 if mode == "1":
                     conn.execute("""
@@ -274,7 +274,6 @@ def get_question():
     if not q:
         return jsonify({"error": "問題がありません"}), 404
     
-    # ジャンル名の nan チェックと整形（修正箇所）
     raw_genre = "" if q[1] is None else str(q[1]).strip()
     if raw_genre and raw_genre.lower() not in ["nan", "none", "null", "undefined"]:
         genre_display = f"{q[7]} | {raw_genre}"
@@ -310,7 +309,7 @@ def check_answer():
         res = {"mode": mode}
         
         raw_genre = str(q[0]).strip()
-        db_genre = "" if raw_genre.lower() in ["nan", "none", "null"] else raw_genre
+        db_genre = "" if raw_genre.lower() in ["nan", "none", "null", "undefined"] else raw_genre
 
         if mode == "1":
             is_correct = (normalize_choice(user_ans) == normalize_choice(q[1]))
