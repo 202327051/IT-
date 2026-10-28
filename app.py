@@ -74,14 +74,22 @@ def normalize_choice(text):
 
 def read_csv_safely(file_path):
     encodings = ["utf-8-sig", "cp932", "shift_jis", "utf-8"]
+    df = None
     for enc in encodings:
         try:
             df = pd.read_csv(file_path, encoding=enc)
-            return df.fillna("")
+            break
         except (UnicodeDecodeError, Exception):
             continue
-    df = pd.read_csv(file_path, encoding="utf-8", errors="replace")
-    return df.fillna("")
+    if df is None:
+        df = pd.read_csv(file_path, encoding="utf-8", errors="replace")
+    
+    # NaNの置換とセル内改行の統一（修正箇所）
+    df = df.fillna("")
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].astype(str).apply(lambda x: x.replace("\r\n", "\n").replace("\r", "\n"))
+    return df
 
 def process_csv_file(file_path, target_user_id, raw_filename):
     if "_選択式" in raw_filename:
@@ -266,15 +274,21 @@ def get_question():
     if not q:
         return jsonify({"error": "問題がありません"}), 404
     
+    # ジャンル名の nan チェックと整形（修正箇所）
     raw_genre = "" if q[1] is None else str(q[1]).strip()
-    if raw_genre.lower() not in ["", "nan", "none", "null"]:
+    if raw_genre and raw_genre.lower() not in ["nan", "none", "null", "undefined"]:
         genre_display = f"{q[7]} | {raw_genre}"
     else:
         genre_display = str(q[7])
         
-    res = {"id": q[0], "genre": genre_display, "question": str(q[2])}
+    res = {"id": q[0], "genre": genre_display, "question": str(q[2] or "").replace("\\n", "\n")}
     if mode == "1":
-        res["choices"] = [f"ア：{q[3]}", f"イ：{q[4]}", f"ウ：{q[5]}", f"エ：{q[6]}"]
+        res["choices"] = [
+            f"ア：{str(q[3] or '').replace('\\n', '\n')}",
+            f"イ：{str(q[4] or '').replace('\\n', '\n')}",
+            f"ウ：{str(q[5] or '').replace('\\n', '\n')}",
+            f"エ：{str(q[6] or '').replace('\\n', '\n')}"
+        ]
     return jsonify(res)
 
 @app.route('/check_answer', methods=['POST'])
