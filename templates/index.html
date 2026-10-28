@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ITパスポート試験対策Webアプリ</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  
+  <!-- Markdown・テーブルレンダリング用ライブラリ（追加） -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
   <style>
     body { background-color: #f8f9fa; font-family: 'Helvetica Neue', Arial, sans-serif; }
     .card { border-radius: 12px; border: none; }
@@ -13,13 +17,28 @@
     #explanation-box { display: none; background-color: #eef7ff; border-left: 5px solid #0d6efd; }
     #feedback-box { display: none; background-color: #fff8e6; border-left: 5px solid #ffc107; }
     
-    /* Excelの改行・レイアウトをそのまま画面上で再現するCSS */
     #q-text {
-      white-space: pre-wrap;
       line-height: 1.6;
       font-family: inherit;
       overflow-wrap: anywhere;
     }
+
+    /* Markdown表の整列・枠線CSS（追加） */
+    #q-text table, #exp-text table, #ai-feedback table {
+      width: 100%;
+      margin: 1rem 0;
+      border-collapse: collapse;
+      background-color: #fff;
+    }
+    #q-text th, #q-text td, #exp-text th, #exp-text td, #ai-feedback th, #ai-feedback td {
+      border: 1px solid #dee2e6;
+      padding: 8px 12px;
+      text-align: center;
+    }
+    #q-text th, #exp-text th, #ai-feedback th {
+      background-color: #f1f3f5;
+    }
+
     #choice-area button {
       white-space: pre-wrap;
       text-align: left;
@@ -100,7 +119,7 @@
       <div id="explanation-box" class="p-3 rounded mt-3">
         <h6 id="result-status" class="fw-bold mb-2"></h6>
         <p id="correct-ans" class="fw-bold text-success mb-1"></p>
-        <p id="exp-text" class="mb-0 text-dark" style="white-space: pre-wrap;"></p>
+        <div id="exp-text" class="mb-0 text-dark"></div>
         <button onclick="nextQuestion()" class="btn btn-primary btn-custom mt-3">次の問題へ</button>
       </div>
 
@@ -108,7 +127,7 @@
       <div id="feedback-box" class="p-3 rounded mt-3">
         <h6 id="ai-score" class="fw-bold mb-2 text-warning"></h6>
         <p id="ai-model-ans" class="fw-bold text-secondary mb-2"></p>
-        <p id="ai-feedback" class="mb-0 text-dark" style="white-space: pre-wrap;"></p>
+        <div id="ai-feedback" class="mb-0 text-dark"></div>
         <button onclick="nextQuestion()" class="btn btn-primary btn-custom mt-3">次の問題へ</button>
       </div>
     </div>
@@ -315,8 +334,9 @@
     document.getElementById('q-count').innerText = `第 ${questionCount} 問`;
     document.getElementById('q-genre').innerText = res.genre;
     
-    // 解説と同様に innerText で出力（改行を100%忠実に再現）
-    document.getElementById('q-text').innerText = res.question || "";
+    // Markdownパーサー経由でHTML化（修正箇所）
+    const qContent = (res.question || "").replace(/\\n/g, '\n');
+    document.getElementById('q-text').innerHTML = marked.parse(qContent);
 
     const choiceArea = document.getElementById('choice-area');
     const textArea = document.getElementById('text-area');
@@ -328,7 +348,7 @@
       res.choices.forEach(c => {
         const btn = document.createElement('button');
         btn.className = 'btn btn-outline-primary text-start p-3 btn-custom';
-        btn.innerText = c;
+        btn.innerText = String(c).replace(/\\n/g, '\n');
         btn.onclick = () => submitChoice(res.id, c.charAt(0));
         choiceArea.appendChild(btn);
       });
@@ -357,7 +377,10 @@
     }
 
     document.getElementById('correct-ans').innerText = `正解: ${res.correct}`;
-    document.getElementById('exp-text').innerText = res.explanation;
+    
+    // 解説欄もMarkdownパーサー経由で表示（修正箇所）
+    const expContent = (res.explanation || "").replace(/\\n/g, '\n');
+    document.getElementById('exp-text').innerHTML = marked.parse(expContent);
     document.getElementById('explanation-box').style.display = 'block';
   }
 
@@ -380,7 +403,10 @@
 
     document.getElementById('ai-score').innerText = `採点結果: ${res.score} / ${res.max} 点`;
     document.getElementById('ai-model-ans').innerText = `模範解答: ${res.correct}`;
-    document.getElementById('ai-feedback').innerText = res.feedback;
+    
+    // AIフィードバックもMarkdown形式に対応（修正箇所）
+    const feedbackContent = (res.feedback || "").replace(/\\n/g, '\n');
+    document.getElementById('ai-feedback').innerHTML = marked.parse(feedbackContent);
     document.getElementById('feedback-box').style.display = 'block';
   }
 
