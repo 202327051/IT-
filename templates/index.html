@@ -5,10 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ITパスポート試験対策Webアプリ</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-  
-  <!-- Markdown・テーブルレンダリング用ライブラリ（追加） -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
   <style>
     body { background-color: #f8f9fa; font-family: 'Helvetica Neue', Arial, sans-serif; }
     .card { border-radius: 12px; border: none; }
@@ -17,31 +14,30 @@
     #explanation-box { display: none; background-color: #eef7ff; border-left: 5px solid #0d6efd; }
     #feedback-box { display: none; background-color: #fff8e6; border-left: 5px solid #ffc107; }
     
-    #q-text {
-      line-height: 1.6;
-      font-family: inherit;
-      overflow-wrap: anywhere;
-    }
-
-    /* Markdown表の整列・枠線CSS（追加） */
-    #q-text table, #exp-text table, #ai-feedback table {
-      width: 100%;
-      margin: 1rem 0;
-      border-collapse: collapse;
+    /* Markdown 表のレンダリングスタイル調整 */
+    #q-text table, #exp-text table, #ai-feedback table { 
+      width: 100%; 
+      margin-top: 10px; 
+      margin-bottom: 15px; 
+      border-collapse: collapse; 
       background-color: #fff;
     }
-    #q-text th, #q-text td, #exp-text th, #exp-text td, #ai-feedback th, #ai-feedback td {
-      border: 1px solid #dee2e6;
-      padding: 8px 12px;
-      text-align: center;
+    #q-text th, #q-text td, #exp-text th, #exp-text td, #ai-feedback th, #ai-feedback td { 
+      border: 1px solid #dee2e6; 
+      padding: 8px 12px; 
+      text-align: left; 
     }
-    #q-text th, #exp-text th, #ai-feedback th {
-      background-color: #f1f3f5;
+    #q-text th, #exp-text th, #ai-feedback th { 
+      background-color: #e9ecef; 
     }
-
     #choice-area button {
       white-space: pre-wrap;
       text-align: left;
+    }
+    /* ボタン内に自動生成される p タグの余白を除去 */
+    #choice-area button p {
+      margin-bottom: 0;
+      display: inline;
     }
   </style>
 </head>
@@ -104,7 +100,7 @@
         <span id="q-genre" class="badge bg-secondary badge-genre">ジャンル</span>
         <span id="q-count" class="text-muted fw-bold"></span>
       </div>
-      <div id="q-text" class="fw-bold mb-4"></div>
+      <div id="q-text" class="fw-bold mb-4" style="line-height: 1.6;"></div>
 
       <!-- 選択式 回答インターフェース -->
       <div id="choice-area" class="d-grid gap-2 mb-3"></div>
@@ -159,6 +155,12 @@
 </div>
 
 <script>
+  // 改行を自動的に <br> に変換する設定
+  marked.setOptions({
+    breaks: true,
+    gfm: true
+  });
+
   let currentSessionId = "";
   let currentMode = "1";
   let currentExam = "";
@@ -332,11 +334,15 @@
 
     questionCount++;
     document.getElementById('q-count').innerText = `第 ${questionCount} 問`;
-    document.getElementById('q-genre').innerText = res.genre;
     
-    // Markdownパーサー経由でHTML化（修正箇所）
-    const qContent = (res.question || "").replace(/\\n/g, '\n');
-    document.getElementById('q-text').innerHTML = marked.parse(qContent);
+    // ジャンルの nan 表示クレンジング処理
+    let genreText = res.genre || '';
+    genreText = genreText.replace(/\s*\|\s*(nan|none|null|undefined)$/i, '');
+    document.getElementById('q-genre').innerText = genreText;
+    
+    // Markdown パース処理
+    const rawQuestion = (res.question || '').replace(/\\n/g, '\n');
+    document.getElementById('q-text').innerHTML = marked.parse(rawQuestion);
 
     const choiceArea = document.getElementById('choice-area');
     const textArea = document.getElementById('text-area');
@@ -348,7 +354,8 @@
       res.choices.forEach(c => {
         const btn = document.createElement('button');
         btn.className = 'btn btn-outline-primary text-start p-3 btn-custom';
-        btn.innerText = String(c).replace(/\\n/g, '\n');
+        const rawChoice = String(c).replace(/\\n/g, '\n');
+        btn.innerHTML = marked.parse(rawChoice);
         btn.onclick = () => submitChoice(res.id, c.charAt(0));
         choiceArea.appendChild(btn);
       });
@@ -378,9 +385,9 @@
 
     document.getElementById('correct-ans').innerText = `正解: ${res.correct}`;
     
-    // 解説欄もMarkdownパーサー経由で表示（修正箇所）
-    const expContent = (res.explanation || "").replace(/\\n/g, '\n');
-    document.getElementById('exp-text').innerHTML = marked.parse(expContent);
+    // 解説欄も Markdown パース処理を適用
+    const rawExp = (res.explanation || '').replace(/\\n/g, '\n');
+    document.getElementById('exp-text').innerHTML = marked.parse(rawExp);
     document.getElementById('explanation-box').style.display = 'block';
   }
 
@@ -404,9 +411,9 @@
     document.getElementById('ai-score').innerText = `採点結果: ${res.score} / ${res.max} 点`;
     document.getElementById('ai-model-ans').innerText = `模範解答: ${res.correct}`;
     
-    // AIフィードバックもMarkdown形式に対応（修正箇所）
-    const feedbackContent = (res.feedback || "").replace(/\\n/g, '\n');
-    document.getElementById('ai-feedback').innerHTML = marked.parse(feedbackContent);
+    // AI採点フィードバックも Markdown パース処理を適用
+    const rawFeedback = (res.feedback || '').replace(/\\n/g, '\n');
+    document.getElementById('ai-feedback').innerHTML = marked.parse(rawFeedback);
     document.getElementById('feedback-box').style.display = 'block';
   }
 
@@ -431,7 +438,8 @@
         const item = document.createElement('div');
         item.className = 'list-group-item d-flex justify-content-between align-items-center';
         
-        const genreName = (g.ジャンル && g.ジャンル.toLowerCase() !== 'nan' && g.ジャンル.toLowerCase() !== 'none' && g.ジャンル.toLowerCase() !== 'null') ? g.ジャンル : '全体正答率';
+        const gName = String(g.ジャンル || '').trim().toLowerCase();
+        const genreName = (g.ジャンル && gName !== 'nan' && gName !== 'none' && gName !== 'null' && gName !== 'undefined') ? g.ジャンル : '全体正答率';
         item.innerHTML = `<span>${genreName}</span><span class="badge bg-primary rounded-pill">${g.rate}% (${g.s}/${g.m})</span>`;
         genreList.appendChild(item);
       });
