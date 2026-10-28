@@ -99,7 +99,7 @@ def process_csv_file(file_path, target_user_id, raw_filename):
                 prob = str(q.get("問題文", "")).strip()
                 if not prob: continue
                 genre_raw = str(q.get("ジャンル", "")).strip()
-                genre = "" if genre_raw.lower() in ["nan", "none", "nan", "null"] else genre_raw
+                genre = "" if genre_raw.lower() in ["nan", "none", "null"] else genre_raw
                 
                 if mode == "1":
                     conn.execute("""
