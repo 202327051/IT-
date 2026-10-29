@@ -320,15 +320,17 @@ def check_answer():
             model_answer = str(q[3])
             keywords = str(q[4]) if q[4] else "なし"
             
-            prompt = f"以下の問題（Markdown表が含まれている場合があります）に対する記述回答を0〜10点で採点し、日本語で簡単な講評を行ってください。\n\n問題:\n{question_text}\n\n必須キーワード:\n{keywords}\n\n模範解答:\n{model_answer}\n\n回答:\n{user_ans}"
+            prompt = f"以下の問題に対する記述回答を0〜10点で採点し、日本語で簡単な講評を行ってください。\n\n問題:\n{question_text}\n\n必須キーワード:\n{keywords}\n\n模範解答:\n{model_answer}\n\n回答:\n{user_ans}"
             score = 0
             feedback = ""
             raw_text = ""
             try:
                 if not GEMINI_API_KEY:
                     raise Exception("GEMINI_API_KEY が設定されていません。")
+                
+                # ★ モデル名を gemini-3.6-flash に明示的に固定
                 response = ai_client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-3.6-flash',
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
@@ -336,9 +338,13 @@ def check_answer():
                         temperature=0.1,
                     )
                 )
-                raw_text = response.text.strip() if (response and response.text) else ""
+                
+                # ★ 安全なテキスト取り出しガード
+                raw_text = getattr(response, 'text', '') or ""
+                raw_text = raw_text.strip()
+                
                 if not raw_text:
-                    raise Exception("Geminiからの返答が空でした。")
+                    raise Exception("Geminiからの返答本文が空でした（利用制限またはセーフティで拒否された可能性があります）。")
                 
                 clean_json_str = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw_text, flags=re.MULTILINE).strip()
                 ai_json = json.loads(clean_json_str, strict=False)
@@ -346,13 +352,16 @@ def check_answer():
                 feedback = str(ai_json.get("feedback", "")).strip()
                 if not feedback:
                     feedback = "AIから講評を取得できませんでした。"
+            except json.JSONDecodeError:
+                score = 0
+                feedback = f"【JSON解析エラー】APIからのレスポンスを正しく解析できませんでした。\n受取データ: {raw_text[:100]}"
             except Exception as ai_err:
                 err_msg = str(ai_err)
                 print("[ERROR] AI Call Failed. Raw text:", repr(raw_text))
                 print("[ERROR] AI Call Failed Detail:", err_msg)
                 score = 0
                 if "RESOURCE_EXHAUSTED" in err_msg or "429" in err_msg:
-                    feedback = "【利用制限エラー】Gemini API の呼び出し制限に達しました。時間を置くか設定を確認してください。"
+                    feedback = "【利用制限エラー】Gemini API の呼び出し制限（RPM 5 / RPD 20）に達しました。時間をおくかクレジットカード登録を完了させてください。"
                 else:
                     feedback = f"AI採点中にエラーが発生しました。\n【詳細】{err_msg}"
             res.update({"score": score, "max": 10, "correct": model_answer, "feedback": feedback})
