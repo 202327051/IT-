@@ -343,7 +343,7 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
                 if attempt < max_retries - 1:
                     time.sleep(0.5 * (attempt + 1))
                 else:
-                    feedback = f"AI採点エラーだにょ: {str(e)}"
+                    feedback = f"AI採点エラー: {str(e)}"
 
         res.update({
             "score": score,
