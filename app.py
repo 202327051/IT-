@@ -331,7 +331,7 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        max_output_tokens=150,
+                        max_output_tokens=300,
                         temperature=0.1
                     )
                 )
@@ -343,7 +343,7 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
                 if attempt < max_retries - 1:
                     time.sleep(0.5 * (attempt + 1))
                 else:
-                    feedback = f"AI採点エラー: {str(e)}"
+                    feedback = f"AI採点エラーだにょ: {str(e)}"
 
         res.update({
             "score": score,
