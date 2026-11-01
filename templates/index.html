@@ -1,395 +1,941 @@
 <!DOCTYPE html>
+
 <html lang="ja">
+
 <head>
+
   <meta charset="UTF-8">
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ITパスポート 学習チャット</title>
+
+  <title>ITパスポート試験対策Webアプリ</title>
+
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
   <style>
-    body {
-      background-color: #7494c0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-      margin: 0; padding: 0;
+
+    body { background-color: #f8f9fa; font-family: 'Helvetica Neue', Arial, sans-serif; }
+
+    .card { border-radius: 12px; border: none; }
+
+    .btn-custom { border-radius: 20px; font-weight: bold; }
+
+    .badge-genre { font-size: 0.9em; padding: 6px 12px; border-radius: 12px; }
+
+    #explanation-box { display: none; background-color: #eef7ff; border-left: 5px solid #0d6efd; }
+
+    #feedback-box { display: none; background-color: #fff8e6; border-left: 5px solid #ffc107; }
+
+    
+
+    /* Markdown 表のレンダリングスタイル調整 */
+
+    #q-text table, #exp-text table, #ai-feedback table { 
+
+      width: 100%; 
+
+      margin-top: 10px; 
+
+      margin-bottom: 15px; 
+
+      border-collapse: collapse; 
+
+      background-color: #fff;
+
     }
-    .chat-container {
-      max-width: 600px;
-      margin: 0 auto;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      background-color: #7494c0;
+
+    #q-text th, #q-text td, #exp-text th, #exp-text td, #ai-feedback th, #ai-feedback td { 
+
+      border: 1px solid #dee2e6; 
+
+      padding: 8px 12px; 
+
+      text-align: left; 
+
     }
-    .chat-header {
-      background-color: #2c3e50;
-      color: white;
-      padding: 12px 16px;
-      text-align: center;
-      font-weight: bold;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+
+    #q-text th, #exp-text th, #ai-feedback th { 
+
+      background-color: #e9ecef; 
+
     }
-    .chat-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 15px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .message {
-      display: flex;
-      flex-direction: column;
-      max-width: 85%;
-    }
-    .message.bot { align-self: flex-start; }
-    .message.user { align-self: flex-end; }
-    .bubble {
-      padding: 10px 14px;
-      border-radius: 16px;
-      font-size: 14px;
-      line-height: 1.5;
-      word-break: break-word;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.15);
-    }
-    .bot .bubble {
-      background-color: #ffffff;
-      color: #000000;
-      border-top-left-radius: 2px;
-    }
-    .user .bubble {
-      background-color: #85e249;
-      color: #000000;
-      border-top-right-radius: 2px;
-    }
-    .system-msg {
-      align-self: center;
-      background-color: rgba(0, 0, 0, 0.3);
-      color: white;
-      font-size: 11px;
-      padding: 4px 12px;
-      border-radius: 12px;
-      margin: 5px 0;
-    }
-    .chat-footer {
-      background-color: #f0f0f0;
-      padding: 10px;
-      border-top: 1px solid #ccc;
-    }
-    .btn-choice {
-      background-color: white;
-      border: 1px solid #7494c0;
-      color: #333;
+
+    #choice-area button {
+
+      white-space: pre-wrap;
+
       text-align: left;
-      margin-bottom: 6px;
-      border-radius: 10px;
-      padding: 8px 12px;
-      width: 100%;
+
     }
-    .btn-choice:hover { background-color: #e6f0fa; }
-    #progress-graph { max-width: 100%; border-radius: 8px; margin-top: 10px; }
+
+    /* ボタン内に自動生成される p タグの余白を除去 */
+
+    #choice-area button p {
+
+      margin-bottom: 0;
+
+      display: inline;
+
+    }
+
   </style>
+
 </head>
+
 <body>
 
-<div class="chat-container">
-  <div class="chat-header">ITパスポート 学習BOT</div>
 
-  <div class="chat-body" id="chat-body">
-    <div class="message bot">
-      <div class="bubble">
-        こんにちは！学習を開始するにはログインし、試験と出題形式を選択してください。
+
+<div class="container py-4" style="max-width: 800px;">
+
+  <!-- ヘッダー / ユーザー管理 -->
+
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+
+    <h3 class="fw-bold text-primary mb-0">ITパスポート 学習アプリ</h3>
+
+    <div id="auth-controls">
+
+      <div id="logged-out-view" class="d-flex gap-2">
+
+        <input type="text" id="username" class="form-control form-control-sm" placeholder="ユーザー名">
+
+        <input type="password" id="password" class="form-control form-control-sm" placeholder="パスワード">
+
+        <button onclick="login()" class="btn btn-sm btn-outline-primary btn-custom">ログイン</button>
+
+        <button onclick="register()" class="btn btn-sm btn-primary btn-custom">登録</button>
+
       </div>
+
+      <div id="logged-in-view" class="d-none align-items-center gap-3">
+
+        <span id="user-display" class="fw-bold text-secondary"></span>
+
+        <button onclick="logout()" class="btn btn-sm btn-outline-danger btn-custom">ログアウト</button>
+
+      </div>
+
     </div>
+
   </div>
 
-  <div class="chat-footer">
-    <!-- 認証コントロール -->
-    <div id="auth-section" class="mb-2">
-      <div id="logged-out-view" class="input-group input-group-sm">
-        <input type="text" id="username" class="form-control" placeholder="ユーザー名">
-        <input type="password" id="password" class="form-control" placeholder="パスワード">
-        <button class="btn btn-primary" onclick="login()">ログイン</button>
-        <button class="btn btn-outline-primary" onclick="register()">登録</button>
-      </div>
-      <div id="logged-in-view" class="d-none d-flex justify-content-between align-items-center">
-        <span id="user-display" class="fw-bold text-dark"></span>
-        <button class="btn btn-sm btn-outline-danger" onclick="logout()">ログアウト</button>
-      </div>
-    </div>
 
-    <!-- セットアップ（試験・形式選択） -->
-    <div id="setup-section" class="mb-2">
-      <div class="row g-1">
-        <div class="col-6">
-          <select id="exam-select" class="form-select form-select-sm" onchange="onExamChange()">
-            <option value="">試験選択</option>
-          </select>
+
+  <!-- メインコンテンツ -->
+
+  <div id="app-content">
+
+    <!-- 設定 & モード選択エリア -->
+
+    <div class="card shadow-sm p-4 mb-4">
+
+      <div class="row g-3">
+
+        <div class="col-md-6">
+
+          <label class="form-label fw-bold">試験選択</label>
+
+          <div class="input-group">
+
+            <select id="exam-select" class="form-select" onchange="onExamChange()">
+
+              <option value="">試験を選択してください</option>
+
+            </select>
+
+            <button id="delete-exam-btn" onclick="deleteExam()" class="btn btn-outline-danger d-none" title="この試験データセットを削除">削除</button>
+
+          </div>
+
         </div>
-        <div class="col-6">
-          <select id="mode-select" class="form-select form-select-sm" disabled>
-            <option value="">形式選択</option>
+
+        <div class="col-md-6">
+
+          <label class="form-label fw-bold">出題形式</label>
+
+          <select id="mode-select" class="form-select" disabled>
+
+            <option value="">試験を選択してください</option>
+
           </select>
+
         </div>
+
       </div>
-      <div class="d-flex gap-1 mt-2">
-        <button id="start-btn" class="btn btn-success btn-sm flex-fill" onclick="startSession()" disabled>学習開始</button>
-        <button id="template-btn" class="btn btn-outline-secondary btn-sm" onclick="downloadTemplate()" disabled>テンプレ</button>
-        <label class="btn btn-outline-info btn-sm mb-0">
-          CSV上書 <input type="file" id="csv-file" accept=".csv" style="display:none;" onchange="uploadCSV()">
-        </label>
-        <button id="delete-exam-btn" class="btn btn-outline-danger btn-sm d-none" onclick="deleteExam()">削除</button>
+
+
+
+      <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
+
+        <button onclick="startSession()" id="start-btn" class="btn btn-success btn-custom px-4" disabled>学習を開始する</button>
+
+        <div class="d-flex gap-2">
+
+          <button onclick="downloadTemplate()" id="template-btn" class="btn btn-sm btn-outline-secondary btn-custom" disabled>テンプレート取得</button>
+
+          <label class="btn btn-sm btn-outline-info btn-custom mb-0">
+
+            CSVアップロード <input type="file" id="csv-file" accept=".csv" style="display:none;" onchange="uploadCSV()">
+
+          </label>
+
+        </div>
+
       </div>
+
     </div>
 
-    <!-- 入力エリア -->
-    <div id="input-section" class="d-none">
-      <div id="choice-area"></div>
-      <div id="text-area" class="d-none">
-        <textarea id="user-text-ans" class="form-control form-control-sm mb-2" rows="3" placeholder="解答を入力してください..."></textarea>
-        <button id="submit-ans-btn" class="btn btn-primary btn-sm w-100" onclick="submitTextAnswer()">送信する</button>
+
+
+    <!-- 問題表示エリア -->
+
+    <div id="quiz-box" class="card shadow-sm p-4 mb-4 d-none">
+
+      <div class="d-flex justify-content-between align-items-center mb-3">
+
+        <span id="q-genre" class="badge bg-secondary badge-genre">ジャンル</span>
+
+        <span id="q-count" class="text-muted fw-bold"></span>
+
       </div>
-      <button id="next-btn" class="btn btn-secondary btn-sm w-100 mt-2 d-none" onclick="nextQuestion()">次の問題へ</button>
+
+      <div id="q-text" class="fw-bold mb-4" style="line-height: 1.6;"></div>
+
+
+
+      <!-- 選択式 回答インターフェース -->
+
+      <div id="choice-area" class="d-grid gap-2 mb-3"></div>
+
+
+
+      <!-- 記述式 回答インターフェース -->
+
+      <div id="text-area" class="mb-3 d-none">
+
+        <textarea id="user-text-ans" class="form-control mb-2" rows="4" placeholder="ここに回答を入力してください..."></textarea>
+
+        <button onclick="submitAnswer()" id="submit-ans-btn" class="btn btn-primary btn-custom w-100">回答を提出</button>
+
+      </div>
+
+
+
+      <!-- 解説 & 判定結果表示 -->
+
+      <div id="explanation-box" class="p-3 rounded mt-3">
+
+        <h6 id="result-status" class="fw-bold mb-2"></h6>
+
+        <p id="correct-ans" class="fw-bold text-success mb-1"></p>
+
+        <div id="exp-text" class="mb-0 text-dark"></div>
+
+        <button onclick="nextQuestion()" class="btn btn-primary btn-custom mt-3">次の問題へ</button>
+
+      </div>
+
+
+
+      <!-- AI採点 フィードバック表示 -->
+
+      <div id="feedback-box" class="p-3 rounded mt-3">
+
+        <h6 id="ai-score" class="fw-bold mb-2 text-warning"></h6>
+
+        <p id="ai-model-ans" class="fw-bold text-secondary mb-2"></p>
+
+        <div id="ai-feedback" class="mb-0 text-dark"></div>
+
+        <button onclick="nextQuestion()" class="btn btn-primary btn-custom mt-3">次の問題へ</button>
+
+      </div>
+
     </div>
 
-    <!-- 終了時コントロール -->
-    <div id="finish-controls" class="d-none d-flex gap-2 mt-2">
-      <button onclick="startSession()" class="btn btn-secondary btn-sm flex-fill">もう一度解く</button>
-      <button onclick="resetHistory()" class="btn btn-outline-danger btn-sm flex-fill">履歴リセット</button>
+
+
+    <!-- 結果・成績エリア -->
+
+    <div id="stats-box" class="card shadow-sm p-4 mb-4 d-none">
+
+      <h4 class="fw-bold text-center mb-3">セッション終了！成績発表</h4>
+
+      <div class="text-center mb-4">
+
+        <h2 class="display-4 fw-bold text-primary mb-0"><span id="final-rate">0</span><small class="fs-4">%</small></h2>
+
+        <p class="text-muted"><span id="final-score">0</span> / <span id="final-max">0</span> 点</p>
+
+      </div>
+
+
+
+      <div id="genre-stats-area" class="mb-4">
+
+        <h6 id="genre-stats-title" class="fw-bold mb-2">正答率内訳</h6>
+
+        <div id="genre-list" class="list-group"></div>
+
+      </div>
+
+
+
+      <div class="text-center mb-4">
+
+        <h6 class="fw-bold mb-2">学習の推移</h6>
+
+        <img id="progress-graph" src="" class="img-fluid rounded border" alt="学習推移グラフ" style="display:none;">
+
+      </div>
+
+
+
+      <div class="d-flex justify-content-center gap-2">
+
+        <button onclick="resetSession()" class="btn btn-secondary btn-custom">もう一度解く</button>
+
+        <button onclick="resetHistory()" class="btn btn-outline-danger btn-custom">この試験の履歴をリセット</button>
+
+      </div>
+
     </div>
+
   </div>
+
 </div>
 
-<script>
-  marked.setOptions({ breaks: true, gfm: true });
-  let currentSessionId = "", currentMode = "1", currentExam = "", questionCount = 0, currentQId = null;
 
-  window.onload = function() { loadExams(); };
+
+<script>
+
+  // 改行を自動的に <br> に変換する設定
+
+  marked.setOptions({
+
+    breaks: true,
+
+    gfm: true
+
+  });
+
+
+
+  let currentSessionId = "";
+
+  let currentMode = "1";
+
+  let currentExam = "";
+
+  let questionCount = 0;
+
+
+
+  window.onload = function() {
+
+    loadExams();
+
+  };
+
+
 
   async function apiCall(url, data = {}) {
+
     try {
+
       const res = await fetch(url, {
+
         method: 'POST',
+
         headers: { 'Content-Type': 'application/json' },
+
         body: JSON.stringify(data)
+
       });
+
       return await res.json();
+
     } catch (e) {
+
+      console.error(e);
+
       return { error: "通信エラーが発生しました" };
+
     }
+
   }
 
-  function appendMessage(sender, text, isMarkdown = false) {
-    const body = document.getElementById("chat-body");
-    const msgDiv = document.createElement("div");
-    msgDiv.className = `message ${sender}`;
-    const bubble = document.createElement("div");
-    bubble.className = "bubble";
-    
-    if (isMarkdown) {
-      bubble.innerHTML = marked.parse(text);
-    } else {
-      bubble.innerText = text;
-    }
-    
-    msgDiv.appendChild(bubble);
-    body.appendChild(msgDiv);
-    body.scrollTop = body.scrollHeight;
-  }
 
-  function appendSystemMessage(text) {
-    const body = document.getElementById("chat-body");
-    const sysDiv = document.createElement("div");
-    sysDiv.className = "system-msg";
-    sysDiv.innerText = text;
-    body.appendChild(sysDiv);
-    body.scrollTop = body.scrollHeight;
-  }
 
   async function login() {
-    const u = document.getElementById('username').value, p = document.getElementById('password').value;
+
+    const u = document.getElementById('username').value;
+
+    const p = document.getElementById('password').value;
+
     const res = await apiCall('/login', { username: u, password: p });
+
     if (res.message) {
+
       document.getElementById('logged-out-view').classList.add('d-none');
+
       document.getElementById('logged-in-view').classList.remove('d-none');
+
+      document.getElementById('logged-in-view').classList.add('d-flex');
+
       document.getElementById('user-display').innerText = u;
-      appendSystemMessage(`ログイン完了: ${u}`);
+
       loadExams();
-    } else { alert(res.error || "ログイン失敗"); }
+
+    } else {
+
+      alert(res.error || "ログイン失敗");
+
+    }
+
   }
+
+
 
   async function register() {
-    const u = document.getElementById('username').value, p = document.getElementById('password').value;
+
+    const u = document.getElementById('username').value;
+
+    const p = document.getElementById('password').value;
+
     const res = await apiCall('/register', { username: u, password: p });
-    if (res.message) alert("登録完了！ログインしてください。"); else alert(res.error || "登録失敗");
+
+    if (res.message) {
+
+      alert("登録完了！ログインしてください。");
+
+    } else {
+
+      alert(res.error || "登録失敗");
+
+    }
+
   }
 
-  async function logout() { await fetch('/logout'); location.reload(); }
+
+
+  async function logout() {
+
+    await fetch('/logout');
+
+    location.reload();
+
+  }
+
+
 
   async function loadExams() {
+
     const res = await fetch('/get_exams').then(r => r.json());
+
     const select = document.getElementById('exam-select');
-    select.innerHTML = '<option value="">試験選択</option>';
+
+    select.innerHTML = '<option value="">試験を選択してください</option>';
+
     if (res.exams) {
+
       res.exams.forEach(e => {
+
         const opt = document.createElement('option');
-        opt.value = e.name; opt.innerText = e.name; opt.dataset.canDelete = e.can_delete;
+
+        opt.value = e.name;
+
+        opt.innerText = e.name;
+
+        opt.dataset.canDelete = e.can_delete;
+
         select.appendChild(opt);
+
       });
+
     }
+
   }
+
+
 
   async function onExamChange() {
+
     const select = document.getElementById('exam-select');
+
     currentExam = select.value;
-    const delBtn = document.getElementById('delete-exam-btn'), startBtn = document.getElementById('start-btn');
-    const templateBtn = document.getElementById('template-btn'), modeSelect = document.getElementById('mode-select');
+
+    const delBtn = document.getElementById('delete-exam-btn');
+
+    const startBtn = document.getElementById('start-btn');
+
+    const templateBtn = document.getElementById('template-btn');
+
+    const modeSelect = document.getElementById('mode-select');
+
+
 
     if (!currentExam) {
-      delBtn.classList.add('d-none'); startBtn.disabled = true; templateBtn.disabled = true; modeSelect.disabled = true;
-      modeSelect.innerHTML = '<option value="">形式選択</option>'; return;
+
+      delBtn.classList.add('d-none');
+
+      startBtn.disabled = true;
+
+      templateBtn.disabled = true;
+
+      modeSelect.disabled = true;
+
+      modeSelect.innerHTML = '<option value="">試験を選択してください</option>';
+
+      return;
+
     }
+
+
 
     const selectedOpt = select.options[select.selectedIndex];
-    if (selectedOpt.dataset.canDelete === "true") delBtn.classList.remove('d-none'); else delBtn.classList.add('d-none');
+
+    if (selectedOpt.dataset.canDelete === "true") {
+
+      delBtn.classList.remove('d-none');
+
+    } else {
+
+      delBtn.classList.add('d-none');
+
+    }
+
+
 
     const res = await apiCall('/get_available_modes', { exam_type: currentExam });
+
     modeSelect.innerHTML = '';
+
     if (res.modes && res.modes.length > 0) {
+
       res.modes.forEach(m => {
+
         const opt = document.createElement('option');
+
         opt.value = m;
-        opt.innerText = m === "1" ? "選択式" : "記述式";
+
+        opt.innerText = m === "1" ? "選択式 (四肢択一)" : "記述式 (AI採点)";
+
         modeSelect.appendChild(opt);
+
       });
-      modeSelect.disabled = false; startBtn.disabled = false; templateBtn.disabled = false;
+
+      modeSelect.disabled = false;
+
+      startBtn.disabled = false;
+
+      templateBtn.disabled = false;
+
     } else {
-      modeSelect.innerHTML = '<option value="">なし</option>';
-      modeSelect.disabled = true; startBtn.disabled = true; templateBtn.disabled = true;
-    }
-  }
 
-  function startSession() {
-    currentMode = document.getElementById('mode-select').value;
-    currentSessionId = "sess_" + Date.now(); questionCount = 0;
-    document.getElementById('setup-section').classList.add('d-none');
-    document.getElementById('finish-controls').classList.add('d-none');
-    document.getElementById('input-section').classList.remove('d-none');
-    appendSystemMessage(`【${currentExam}】学習をスタートします`);
-    nextQuestion();
-  }
+      modeSelect.innerHTML = '<option value="">対応形式なし</option>';
 
-  async function nextQuestion() {
-    document.getElementById('next-btn').classList.add('d-none');
-    document.getElementById('choice-area').innerHTML = '';
-    document.getElementById('user-text-ans').value = '';
+      modeSelect.disabled = true;
 
-    const res = await apiCall('/get_question', { mode: currentMode, exam_type: currentExam, session_id: currentSessionId });
-    if (res.error) {
-      appendSystemMessage("すべての問題が終了しました！");
-      finishSession();
-      return;
+      startBtn.disabled = true;
+
+      templateBtn.disabled = true;
+
     }
 
-    currentQId = res.id;
-    questionCount++;
-    let genreText = (res.genre || '').replace(/\s*\|\s*(nan|none|null|undefined)$/i, '');
-    appendMessage("bot", `【第 ${questionCount} 問 / ${genreText}】\n\n${res.question}`, true);
-
-    const choiceArea = document.getElementById('choice-area'), textArea = document.getElementById('text-area');
-
-    if (currentMode === "1") {
-      choiceArea.classList.remove('d-none'); textArea.classList.add('d-none');
-      res.choices.forEach(c => {
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-choice';
-        btn.innerHTML = marked.parse(String(c).replace(/\\n/g, '\n'));
-        btn.onclick = () => submitChoiceAnswer(res.id, c.charAt(0));
-        choiceArea.appendChild(btn);
-      });
-    } else {
-      choiceArea.classList.add('d-none'); textArea.classList.remove('d-none');
-    }
   }
 
-  async function submitChoiceAnswer(qId, ans) {
-    appendMessage("user", ans);
-    document.getElementById('choice-area').classList.add('d-none');
 
-    const res = await apiCall('/check_answer', { mode: "1", id: qId, answer: ans, session_id: currentSessionId });
-
-    const status = res.score > 0 ? "⭕ 正解！" : "❌ 不正解...";
-    appendMessage("bot", `${status}\n正解: ${res.correct}\n\n解説:\n${res.explanation}`, true);
-    document.getElementById('next-btn').classList.remove('d-none');
-  }
-
-  async function submitTextAnswer() {
-    const userAns = document.getElementById('user-text-ans').value.trim();
-    if (!userAns) return alert("回答を入力してください");
-
-    appendMessage("user", userAns);
-    document.getElementById('text-area').classList.add('d-none');
-
-    const res = await apiCall('/check_answer', { mode: "2", id: currentQId, answer: userAns, session_id: currentSessionId });
-
-    let fbText = `採点結果: ${res.score} / ${res.max} 点\n\n模範解答:\n${res.correct}`;
-    if (res.feedback) fbText += `\n\n【判定詳細】\n${res.feedback}`;
-
-    appendMessage("bot", fbText, true);
-    document.getElementById('next-btn').classList.remove('d-none');
-  }
-
-  async function finishSession() {
-    document.getElementById('input-section').classList.add('d-none');
-    document.getElementById('setup-section').classList.remove('d-none');
-
-    const res = await apiCall('/get_final_stats', { session_id: currentSessionId, exam_type: currentExam });
-
-    let resultText = `🎉 成績発表 🎉\n正答率: ${res.total_rate}%\n(得点: ${res.total_score} / ${res.total_max} 点)`;
-    appendMessage("bot", resultText);
-
-    document.getElementById('finish-controls').classList.remove('d-none');
-
-    // グラフ取得
-    const graphRes = await apiCall('/get_graph', { exam_type: currentExam });
-    if (graphRes.plot) {
-      const body = document.getElementById("chat-body");
-      const imgDiv = document.createElement("div");
-      imgDiv.className = "message bot";
-      imgDiv.innerHTML = `<div class="bubble"><strong>学習推移グラフ</strong><br><img src="data:image/png;base64,${graphRes.plot}" id="progress-graph"></div>`;
-      body.appendChild(imgDiv);
-      body.scrollTop = body.scrollHeight;
-    }
-  }
-
-  function downloadTemplate() {
-    const mode = document.getElementById('mode-select').value || "1";
-    window.location.href = `/download_template/${mode}`;
-  }
-
-  async function uploadCSV() {
-    const fileInput = document.getElementById('csv-file');
-    if (!fileInput.files[0]) return;
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-
-    try {
-      const res = await fetch('/upload_csv', { method: 'POST', body: formData }).then(r => r.json());
-      if (res.message) { alert(res.message); loadExams(); } else alert(res.error || "アップロード失敗");
-    } catch (e) { alert("通信エラーが発生しました"); }
-    fileInput.value = "";
-  }
 
   async function deleteExam() {
+
     if (!confirm(`「${currentExam}」を削除してもよろしいですか？`)) return;
+
     const res = await apiCall('/delete_exam', { exam_type: currentExam });
-    alert(res.message); loadExams(); onExamChange();
+
+    alert(res.message);
+
+    loadExams();
+
+    onExamChange();
+
   }
 
-  async function resetHistory() {
-    if (!confirm(`「${currentExam}」の学習履歴をリセットしますか？`)) return;
-    await apiCall('/reset_history', { exam_type: currentExam });
-    alert("履歴をリセットしました");
+
+
+  function downloadTemplate() {
+
+    const mode = document.getElementById('mode-select').value || "1";
+
+    window.location.href = `/download_template/${mode}`;
+
   }
+
+
+
+  async function uploadCSV() {
+
+    const fileInput = document.getElementById('csv-file');
+
+    if (!fileInput.files[0]) return;
+
+    const formData = new FormData();
+
+    formData.append('file', fileInput.files[0]);
+
+
+
+    try {
+
+      const res = await fetch('/upload_csv', { method: 'POST', body: formData }).then(r => r.json());
+
+      if (res.message) {
+
+        alert(res.message);
+
+        loadExams();
+
+      } else {
+
+        alert(res.error || "アップロード失敗");
+
+      }
+
+    } catch (e) {
+
+      alert("通信エラーが発生しました");
+
+    }
+
+    fileInput.value = "";
+
+  }
+
+
+
+  function startSession() {
+
+    currentMode = document.getElementById('mode-select').value;
+
+    currentSessionId = "sess_" + Date.now();
+
+    questionCount = 0;
+
+    document.getElementById('stats-box').classList.add('d-none');
+
+    document.getElementById('quiz-box').classList.remove('d-none');
+
+    nextQuestion();
+
+  }
+
+
+
+  async function nextQuestion() {
+
+    document.getElementById('explanation-box').style.display = 'none';
+
+    document.getElementById('feedback-box').style.display = 'none';
+
+    document.getElementById('user-text-ans').value = '';
+
+
+
+    const res = await apiCall('/get_question', {
+
+      mode: currentMode,
+
+      exam_type: currentExam,
+
+      session_id: currentSessionId
+
+    });
+
+
+
+    if (res.error) {
+
+      finishSession();
+
+      return;
+
+    }
+
+
+
+    questionCount++;
+
+    document.getElementById('q-count').innerText = `第 ${questionCount} 問`;
+
+    
+
+    // ジャンルの nan 表示クレンジング処理
+
+    let genreText = res.genre || '';
+
+    genreText = genreText.replace(/\s*\|\s*(nan|none|null|undefined)$/i, '');
+
+    document.getElementById('q-genre').innerText = genreText;
+
+    
+
+    // Markdown パース処理
+
+    const rawQuestion = (res.question || '').replace(/\\n/g, '\n');
+
+    document.getElementById('q-text').innerHTML = marked.parse(rawQuestion);
+
+
+
+    const choiceArea = document.getElementById('choice-area');
+
+    const textArea = document.getElementById('text-area');
+
+
+
+    if (currentMode === "1") {
+
+      choiceArea.classList.remove('d-none');
+
+      textArea.classList.add('d-none');
+
+      choiceArea.innerHTML = '';
+
+      res.choices.forEach(c => {
+
+        const btn = document.createElement('button');
+
+        btn.className = 'btn btn-outline-primary text-start p-3 btn-custom';
+
+        const rawChoice = String(c).replace(/\\n/g, '\n');
+
+        btn.innerHTML = marked.parse(rawChoice);
+
+        btn.onclick = () => submitChoice(res.id, c.charAt(0));
+
+        choiceArea.appendChild(btn);
+
+      });
+
+    } else {
+
+      choiceArea.classList.add('d-none');
+
+      textArea.classList.remove('d-none');
+
+      document.getElementById('submit-ans-btn').onclick = () => submitText(res.id);
+
+    }
+
+  }
+
+
+
+  async function submitChoice(qId, ans) {
+
+    const res = await apiCall('/check_answer', {
+
+      mode: "1",
+
+      id: qId,
+
+      answer: ans,
+
+      session_id: currentSessionId
+
+    });
+
+
+
+    const status = document.getElementById('result-status');
+
+    if (res.score > 0) {
+
+      status.innerText = "⭕ 正解！";
+
+      status.className = "fw-bold mb-2 text-success";
+
+    } else {
+
+      status.innerText = "❌ 不正解...";
+
+      status.className = "fw-bold mb-2 text-danger";
+
+    }
+
+
+
+    document.getElementById('correct-ans').innerText = `正解: ${res.correct}`;
+
+    
+
+    // 解説欄も Markdown パース処理を適用
+
+    const rawExp = (res.explanation || '').replace(/\\n/g, '\n');
+
+    document.getElementById('exp-text').innerHTML = marked.parse(rawExp);
+
+    document.getElementById('explanation-box').style.display = 'block';
+
+  }
+
+
+
+  async function submitText(qId) {
+
+    const ans = document.getElementById('user-text-ans').value.trim();
+
+    if (!ans) return alert("回答を入力してください");
+
+
+
+    document.getElementById('submit-ans-btn').disabled = true;
+
+    document.getElementById('submit-ans-btn').innerText = "採点中...";
+
+
+
+    const res = await apiCall('/check_answer', {
+
+      mode: "2",
+
+      id: qId,
+
+      answer: ans,
+
+      session_id: currentSessionId
+
+    });
+
+
+
+    document.getElementById('submit-ans-btn').disabled = false;
+
+    document.getElementById('submit-ans-btn').innerText = "回答を提出";
+
+
+
+    document.getElementById('ai-score').innerText = `採点結果: ${res.score} / ${res.max} 点`;
+
+    document.getElementById('ai-model-ans').innerText = `模範解答: ${res.correct}`;
+
+    
+
+    // AI採点フィードバックも Markdown パース処理を適用
+
+    const rawFeedback = (res.feedback || '').replace(/\\n/g, '\n');
+
+    document.getElementById('ai-feedback').innerHTML = marked.parse(rawFeedback);
+
+    document.getElementById('feedback-box').style.display = 'block';
+
+  }
+
+
+
+  async function finishSession() {
+
+    document.getElementById('quiz-box').classList.add('d-none');
+
+    document.getElementById('stats-box').classList.remove('d-none');
+
+
+
+    const res = await apiCall('/get_final_stats', {
+
+      session_id: currentSessionId,
+
+      exam_type: currentExam
+
+    });
+
+
+
+    document.getElementById('final-rate').innerText = res.total_rate;
+
+    document.getElementById('final-score').innerText = res.total_score;
+
+    document.getElementById('final-max').innerText = res.total_max;
+
+
+
+    const genreList = document.getElementById('genre-list');
+
+    genreList.innerHTML = '';
+
+    
+
+    if (res.genre_stats && res.genre_stats.length > 0) {
+
+      res.genre_stats.forEach(g => {
+
+        const item = document.createElement('div');
+
+        item.className = 'list-group-item d-flex justify-content-between align-items-center';
+
+        
+
+        const gName = String(g.ジャンル || '').trim().toLowerCase();
+
+        const genreName = (g.ジャンル && gName !== 'nan' && gName !== 'none' && gName !== 'null' && gName !== 'undefined') ? g.ジャンル : '全体正答率';
+
+        item.innerHTML = `<span>${genreName}</span><span class="badge bg-primary rounded-pill">${g.rate}% (${g.s}/${g.m})</span>`;
+
+        genreList.appendChild(item);
+
+      });
+
+    }
+
+
+
+    const graphRes = await apiCall('/get_graph', { exam_type: currentExam });
+
+    const graphImg = document.getElementById('progress-graph');
+
+    if (graphRes.plot) {
+
+      graphImg.src = "data:image/png;base64," + graphRes.plot;
+
+      graphImg.style.display = 'block';
+
+    } else {
+
+      graphImg.style.display = 'none';
+
+    }
+
+  }
+
+
+
+  function resetSession() {
+
+    startSession();
+
+  }
+
+
+
+  async function resetHistory() {
+
+    if (!confirm(`「${currentExam}」の学習履歴をリセットしますか？`)) return;
+
+    await apiCall('/reset_history', { exam_type: currentExam });
+
+    alert("履歴をリセットしました");
+
+    finishSession();
+
+  }
+
 </script>
+
+
+
 </body>
+
 </html>
