@@ -14,22 +14,13 @@ import shutil
 import urllib.parse
 import re
 import json
-import time
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-# Google Gemini API ライブラリ
-from google import genai
-from google.genai import types
-
 app = Flask(__name__, template_folder='templates')
 app.config['SECRET_KEY'] = 'it-pass-key-2026'
 CORS(app)
-
-# --- Gemini APIの初期化 ---
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -63,7 +54,7 @@ def backup_and_restore_db():
 
 def normalize_text(text):
     text = unicodedata.normalize("NFKC", str(text)).lower()
-    return text.replace(" ", "").replace("．", "").replace(".", "").replace(",", "")
+    return text.replace(" ", "").replace("．", "").replace(".", "").replace(",", "").replace("、", "").replace("句", "")
 
 def normalize_choice(text):
     text = unicodedata.normalize("NFKC", str(text)).strip().lower()
@@ -302,59 +293,55 @@ def check_answer():
 
     res = {"mode": mode}
     if mode == "1":
-        # 選択式（従来通り）
+        # 選択式
         is_correct = normalize_choice(user_ans) == normalize_choice(q[1])
         score = 1 if is_correct else 0
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        # 記述式（Gemini APIによる爆速・文脈自動採点）
-        question_text = str(q[5])
-        model_answer = str(q[3])
+        # 記述式（キーワード判定アルゴリズム版）
+        model_answer = str(q[3] or "")
+        raw_keywords = str(q[4] or "")
         
-        # プロンプトを最軽量化
-        prompt = f"""[問題]:{question_text}
-[模範解答]:{model_answer}
-[回答]:{user_ans}
-
-意味が合っていれば正解とし、10点満点で採点してJSONのみ出力。
-JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
-
+        # キーワードをカンマや読点、スペースで分割
+        keywords = [k.strip() for k in re.split(r'[,、,\s]+', raw_keywords) if k.strip()]
+        
+        norm_user_ans = normalize_text(user_ans)
+        
         score = 0
-        feedback = ""
-        max_retries = 3
-
-        # バックオフ（自動再試行）ループでエラーを回避
-        for attempt in range(max_retries):
-            try:
-                response = ai_client.models.generate_content(
-                    model='gemini-3.6-flash-lite',
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        max_output_tokens=150,
-                        temperature=0.1
-                    )
-                )
-                
-                # ★ NoneType・空応答防止の安全チェック
-                raw_text = getattr(response, 'text', '') or ""
-                raw_text = raw_text.strip()
-                
-                if not raw_text:
-                    raise Exception("Geminiからの返答が空でした。")
-                
-                # クレンジング & JSONパース
-                clean_json_str = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw_text, flags=re.MULTILINE).strip()
-                ai_res = json.loads(clean_json_str)
-                
-                score = int(ai_res.get("score", 0))
-                feedback = str(ai_res.get("feedback", "")).strip()
-                break
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    time.sleep(0.5 * (attempt + 1))
+        hit_keywords = []
+        missed_keywords = []
+        
+        if keywords:
+            for kw in keywords:
+                norm_kw = normalize_text(kw)
+                if norm_kw and norm_kw in norm_user_ans:
+                    hit_keywords.append(kw)
                 else:
-                    feedback = f"AI採点エラー: {str(e)}"
+                    missed_keywords.append(kw)
+            
+            # 得点計算（含まれるキーワードの割合 × 10点）
+            hit_ratio = len(hit_keywords) / len(keywords)
+            score = round(hit_ratio * 10)
+            
+            # フィードバック生成
+            fb_lines = [f"キーワード一致率: {len(hit_keywords)} / {len(keywords)}"]
+            if hit_keywords:
+                fb_lines.append(f"⭕ 含まれているキーワード: {', '.join(hit_keywords)}")
+            if missed_keywords:
+                fb_lines.append(f"❌ 不足しているキーワード: {', '.join(missed_keywords)}")
+            feedback = "\n".join(fb_lines)
+        else:
+            # 必須キーワードが未設定の場合は簡易一致度
+            norm_model = normalize_text(model_answer)
+            if norm_user_ans and norm_user_ans in norm_model:
+                score = 8
+                feedback = "模範解答に一部の表現が含まれています。"
+            elif norm_user_ans == norm_model:
+                score = 10
+                feedback = "模範解答と完全に一致しています。"
+            else:
+                score = 0
+                feedback = "模範解答の必須表現が含まれていません。"
 
         res.update({
             "score": score,
