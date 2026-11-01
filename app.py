@@ -14,13 +14,22 @@ import shutil
 import urllib.parse
 import re
 import json
+import time
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+# Google Gemini API ライブラリ
+from google import genai
+from google.genai import types
+
 app = Flask(__name__, template_folder='templates')
 app.config['SECRET_KEY'] = 'it-pass-key-2026'
 CORS(app)
+
+# --- Gemini APIの初期化 ---
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -54,7 +63,7 @@ def backup_and_restore_db():
 
 def normalize_text(text):
     text = unicodedata.normalize("NFKC", str(text)).lower()
-    return text.replace(" ", "").replace("．", "").replace(".", "").replace(",", "").replace("、", "").replace("句", "")
+    return text.replace(" ", "").replace("．", "").replace(".", "").replace(",", "")
 
 def normalize_choice(text):
     text = unicodedata.normalize("NFKC", str(text)).strip().lower()
@@ -255,7 +264,7 @@ def logout():
 @app.route('/get_question', methods=['POST'])
 @login_required
 def get_question():
-    data = request.json or {}
+    data = request.json
     mode, selected_exam, session_id = str(data.get("mode")), data.get("exam_type"), data.get("session_id")
     current_uid = int(current_user.id)
 
@@ -284,7 +293,7 @@ def get_question():
 @app.route('/check_answer', methods=['POST'])
 @login_required
 def check_answer():
-    data = request.json or {}
+    data = request.json
     mode, q_id, user_ans, session_id = str(data.get("mode")), data.get("id"), data.get("answer"), data.get("session_id")
     current_uid = int(current_user.id)
 
@@ -293,50 +302,48 @@ def check_answer():
 
     res = {"mode": mode}
     if mode == "1":
-        # 選択式
+        # 選択式（従来通り）
         is_correct = normalize_choice(user_ans) == normalize_choice(q[1])
         score = 1 if is_correct else 0
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        # 記述式（ローカル・キーワード一致判定アルゴリズム）
-        model_answer = str(q[3] or "")
-        raw_keywords = str(q[4] or "")
+        # 記述式（Gemini APIによる爆速・文脈自動採点）
+        question_text = str(q[5])
+        model_answer = str(q[3])
         
-        keywords = [k.strip() for k in re.split(r'[,、,\s]+', raw_keywords) if k.strip()]
-        norm_user_ans = normalize_text(user_ans)
-        
+        # プロンプトを最軽量化
+        prompt = f"""[問題]:{question_text}
+[模範解答]:{model_answer}
+[回答]:{user_ans}
+
+意味が合っていれば正解とし、10点満点で採点してJSONのみ出力。
+JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
+
         score = 0
-        hit_keywords = []
-        missed_keywords = []
-        
-        if keywords:
-            for kw in keywords:
-                norm_kw = normalize_text(kw)
-                if norm_kw and norm_kw in norm_user_ans:
-                    hit_keywords.append(kw)
+        feedback = ""
+        max_retries = 3
+
+        # バックオフ（自動再試行）ループで503エラーを回避
+        for attempt in range(max_retries):
+            try:
+                response = ai_client.models.generate_content(
+                    model='gemini-3.6-flash-lite',
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        max_output_tokens=150,
+                        temperature=0.1
+                    )
+                )
+                ai_res = json.loads(response.text)
+                score = int(ai_res.get("score", 0))
+                feedback = ai_res.get("feedback", "")
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))
                 else:
-                    missed_keywords.append(kw)
-            
-            hit_ratio = len(hit_keywords) / len(keywords)
-            score = round(hit_ratio * 10)
-            
-            fb_lines = [f"キーワード一致率: {len(hit_keywords)} / {len(keywords)}"]
-            if hit_keywords:
-                fb_lines.append(f"⭕ 含まれているキーワード: {', '.join(hit_keywords)}")
-            if missed_keywords:
-                fb_lines.append(f"❌ 不足しているキーワード: {', '.join(missed_keywords)}")
-            feedback = "\n".join(fb_lines)
-        else:
-            norm_model = normalize_text(model_answer)
-            if norm_user_ans and norm_user_ans in norm_model:
-                score = 8
-                feedback = "模範解答に一部の表現が含まれています。"
-            elif norm_user_ans == norm_model:
-                score = 10
-                feedback = "模範解答と完全に一致しています。"
-            else:
-                score = 0
-                feedback = "模範解答の必須表現が含まれていません。"
+                    feedback = f"AI採点エラー: {str(e)}"
 
         res.update({
             "score": score,
@@ -356,7 +363,7 @@ def check_answer():
 @app.route('/get_final_stats', methods=['POST'])
 @login_required
 def get_final_stats():
-    data = request.json or {}
+    data = request.json
     session_id = data.get("session_id")
     exam_type = data.get("exam_type")
     current_uid = int(current_user.id)
@@ -379,8 +386,7 @@ def get_final_stats():
 @app.route('/get_graph', methods=['POST'])
 @login_required
 def get_graph():
-    data = request.json or {}
-    exam_type = data.get("exam_type")
+    exam_type = request.json.get("exam_type")
     current_uid = int(current_user.id)
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
         df = pd.read_sql_query("SELECT timestamp, accuracy FROM session_stats WHERE user_id=? AND exam_type=? ORDER BY id ASC", conn, params=(current_uid, exam_type))
@@ -407,8 +413,7 @@ def get_graph():
 @app.route('/reset_history', methods=['POST'])
 @login_required
 def reset_history():
-    data = request.json or {}
-    exam_type = data.get("exam_type")
+    exam_type = request.json.get("exam_type")
     current_uid = int(current_user.id)
     with sqlite3.connect(DB_PATH, timeout=30) as conn:
         if exam_type:
