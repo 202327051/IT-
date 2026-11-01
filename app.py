@@ -316,14 +316,13 @@ def check_answer():
 [模範解答]:{model_answer}
 [回答]:{user_ans}
 
-意味が合っていれば正解とし、10点満点で採点してJSONのみ出力。
-JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
+意味が合っていれば正解とし、10点満点で採点して必ず以下のJSON形式のみで出力してください。
+{{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
 
         score = 0
         feedback = ""
         max_retries = 3
 
-        # バックオフ（自動再試行）ループで503エラーを回避
         for attempt in range(max_retries):
             try:
                 response = ai_client.models.generate_content(
@@ -331,13 +330,24 @@ JSON: {{"score": (0-10の整数), "feedback": "簡潔な解説"}}"""
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        max_output_tokens=300,
+                        max_output_tokens=500,  # 文字切れを防ぐため500に拡張
                         temperature=0.1
                     )
                 )
-                ai_res = json.loads(response.text)
-                score = int(ai_res.get("score", 0))
-                feedback = ai_res.get("feedback", "")
+                
+                raw_text = response.text.strip()
+                try:
+                    ai_res = json.loads(raw_text)
+                    score = int(ai_res.get("score", 0))
+                    feedback = ai_res.get("feedback", "")
+                except json.JSONDecodeError:
+                    # JSONが破損・切断されていた場合の緊急救済処理
+                    import re
+                    match = re.search(r'"score"\s*:\s*(\d+)', raw_text)
+                    if match:
+                        score = int(match.group(1))
+                    feedback = raw_text.replace('{', '').replace('}', '').replace('"', '')
+                
                 break
             except Exception as e:
                 if attempt < max_retries - 1:
