@@ -298,13 +298,11 @@ def check_answer():
         score = 1 if is_correct else 0
         res.update({"score": score, "max": 1, "correct": str(q[1]), "explanation": str(q[2])})
     else:
-        # 記述式（キーワード判定アルゴリズム版）
+        # 記述式（ローカル・キーワード一致判定アルゴリズム）
         model_answer = str(q[3] or "")
         raw_keywords = str(q[4] or "")
         
-        # キーワードをカンマや読点、スペースで分割
         keywords = [k.strip() for k in re.split(r'[,、,\s]+', raw_keywords) if k.strip()]
-        
         norm_user_ans = normalize_text(user_ans)
         
         score = 0
@@ -319,11 +317,9 @@ def check_answer():
                 else:
                     missed_keywords.append(kw)
             
-            # 得点計算（含まれるキーワードの割合 × 10点）
             hit_ratio = len(hit_keywords) / len(keywords)
             score = round(hit_ratio * 10)
             
-            # フィードバック生成
             fb_lines = [f"キーワード一致率: {len(hit_keywords)} / {len(keywords)}"]
             if hit_keywords:
                 fb_lines.append(f"⭕ 含まれているキーワード: {', '.join(hit_keywords)}")
@@ -331,7 +327,6 @@ def check_answer():
                 fb_lines.append(f"❌ 不足しているキーワード: {', '.join(missed_keywords)}")
             feedback = "\n".join(fb_lines)
         else:
-            # 必須キーワードが未設定の場合は簡易一致度
             norm_model = normalize_text(model_answer)
             if norm_user_ans and norm_user_ans in norm_model:
                 score = 8
