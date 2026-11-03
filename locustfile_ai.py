@@ -5,11 +5,10 @@ class ITAppUser(HttpUser):
     wait_time = between(1, 3)
 
     def on_start(self):
-        """テスト開始時に各仮想ユーザーが自動ログインする"""
-        # テスト用のアカウントでログイン（※実在するユーザー名・パスワードを指定してください）
+        """テスト開始時に指定アカウントで自動ログイン"""
         self.client.post("/login", data={
-            "username": "testuser",  # DBに登録済みのユーザー名
-            "password": "password"   # そのパスワード
+            "username": "202327000",
+            "password": "0000"
         })
 
     @task
