@@ -6,7 +6,7 @@ class ITAppUser(HttpUser):
 
     def on_start(self):
         """テスト開始時に指定アカウントで自動ログイン"""
-        self.client.post("/login", data={
+        self.client.post("/login", json={
             "username": "202327000",
             "password": "0000"
         })
